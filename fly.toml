@@ -1,0 +1,56 @@
+# Fly.io configuration for Draw-tionary.
+#
+#   fly launch --no-deploy      (once, to create the app — say no to a database)
+#   fly volumes create data --size 1 --region <your region>
+#   fly secrets set DISCORD_PUBLIC_KEY=... DISCORD_BOT_TOKEN=... DISCORD_APP_ID=...
+#   fly deploy
+#
+# Rename the app below before the first deploy; Fly app names are global.
+
+app = "draw-tionary"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  # Must match the volume mount below. If these disagree, the server refuses to
+  # start rather than writing a database that a redeploy would throw away.
+  DB_FILE = "/data/draw-tionary.db"
+  # Set this to your real domain once it resolves. It is what the bot puts in
+  # links, so a wrong value produces buttons that go nowhere.
+  PUBLIC_URL = "https://draw-tionary.fly.dev"
+
+# SQLite means one writer, so exactly one machine. Autoscaling this app would
+# give you two containers with two divergent databases and no error to say so.
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+
+  # Discord retries an interaction that doesn't answer in 3 seconds, so a cold
+  # start would show up to players as the bot ignoring them. Keeping one
+  # machine warm costs a couple of dollars a month and removes the problem.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

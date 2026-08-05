@@ -12,5 +12,4 @@ art/templates/
 art/*.design
 art/*.afdesign
 art/*.png
-art/*.svg
 art/*.jpg

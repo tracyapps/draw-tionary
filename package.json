@@ -16,5 +16,9 @@
   },
   "devDependencies": {
     "jsdom": "^25.0.0"
+  },
+  "//engines": "node:sqlite is what bot/store.js runs on. It arrived in 22 and is still experimental, so pin the major rather than letting a host pick a newer one.",
+  "engines": {
+    "node": ">=22 <23"
   }
 }

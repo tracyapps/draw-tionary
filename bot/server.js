@@ -17,6 +17,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { mkdirSync, accessSync, constants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
 
@@ -40,6 +41,27 @@ const {
 if (!DISCORD_PUBLIC_KEY) {
   console.error("DISCORD_PUBLIC_KEY is not set — copy it from the Developer Portal.");
   process.exit(1);
+}
+
+/*
+ * A misconfigured volume is the failure that costs you everything, and it is
+ * silent: SQLite happily creates its file on the container's own disk, the app
+ * looks healthy, and the drawings vanish at the next deploy. So check up front
+ * that the directory exists and is writable, and refuse to start if it isn't.
+ */
+if (DB_FILE) {
+  const dir = dirname(DB_FILE);
+  try {
+    mkdirSync(dir, { recursive: true });
+    accessSync(dir, constants.W_OK);
+  } catch (err) {
+    console.error(
+      `DB_FILE is set to ${DB_FILE} but ${dir} is not writable (${err.code}).\n` +
+      `On Railway or Fly this usually means the volume isn't mounted there yet.\n` +
+      `Refusing to start rather than writing a database that will be thrown away.`
+    );
+    process.exit(1);
+  }
 }
 
 const store = openStore(DB_FILE);
@@ -486,10 +508,46 @@ const server = createServer(async (req, res) => {
 // Expired sessions are worthless; sweep them hourly.
 setInterval(() => store.purgeExpiredSessions(), 60 * 60 * 1000).unref();
 
-server.listen(PORT, () => {
-  console.log(`Draw-tionary listening on ${PUBLIC_URL}`);
+/*
+ * 0.0.0.0, not the default. Inside a container, binding to localhost means the
+ * platform's router cannot reach the process, and the symptom is a healthcheck
+ * that times out with no error in the logs to explain why.
+ */
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Draw-tionary listening on port ${PORT}`);
+  console.log(`  public url: ${PUBLIC_URL}`);
   console.log(`  interactions endpoint: ${PUBLIC_URL}/interactions`);
+  console.log(`  database: ${DB_FILE ?? "(default, beside the source)"}`);
   if (!DISCORD_BOT_TOKEN) console.log("  (DISCORD_BOT_TOKEN unset — channel posting disabled)");
+  if (PUBLIC_URL.startsWith("http://") && process.env.NODE_ENV === "production") {
+    console.warn("  WARNING: PUBLIC_URL is http. The viewer cookie will not be Secure,");
+    console.warn("           and Discord requires https for an interactions endpoint.");
+  }
 });
+
+/*
+ * Managed hosts send SIGTERM and then kill the container a few seconds later.
+ * Closing the server first lets in-flight requests finish — someone mid-submit
+ * loses an hour's drawing otherwise — and closing the database makes sure WAL
+ * is checkpointed rather than left for recovery on next boot.
+ */
+let shuttingDown = false;
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received — finishing in-flight requests.`);
+
+    const done = () => {
+      try { store.close(); } catch { /* already closed */ }
+      process.exit(0);
+    };
+
+    server.close(done);
+    // Don't hang forever on a wedged keep-alive connection.
+    setTimeout(done, 10_000).unref();
+  });
+}
 
 export { server, store };

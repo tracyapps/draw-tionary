@@ -1,0 +1,19 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 30,
+
+    "//restart": "SQLite tolerates a crash — WAL recovers — so restarting is safe. Give up after 10 so a genuine misconfiguration is visible rather than looping forever.",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+
+    "//replicas": "Must stay 1. SQLite has a single writer, and two replicas would quietly keep two different databases with no error to tell you.",
+    "numReplicas": 1
+  }
+}

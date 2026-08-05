@@ -13,7 +13,7 @@
  *   node tools/build-spike.js
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -54,6 +54,9 @@ ${body.split("\n").map(l => (l.trim() ? "  " + l : l)).join("\n")}
  * both means there is exactly one thing to keep in step with lib/game.js.
  */
 for (const dir of ["spike", "app"]) {
+  // mkdir because the container image excludes spike/ — the prototypes are
+  // never served — and a missing directory should not fail the build.
+  mkdirSync(join(root, dir), { recursive: true });
   writeFileSync(join(root, dir, "bundle.js"), out);
   console.log(`Wrote ${dir}/bundle.js`);
 }

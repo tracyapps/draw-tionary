@@ -156,12 +156,85 @@ end-to-end round over real HTTP with real Ed25519 signatures.
 
 ## Deploying
 
-The server is a single Node process with a SQLite file beside it. Railway,
-Fly.io, or Render all work; point a persistent volume at `DB_FILE`.
+This is a long-running Node process that owns a SQLite file on disk. That
+rules out serverless hosts — Vercel, Netlify Functions, Cloudflare Workers.
+Not because of a setting, but because there is no always-on process to hold
+the webhook and no persistent disk for the database. A SQLite file on an
+ephemeral filesystem looks like it works and then silently loses every drawing
+at the next deploy.
 
-Two things to change when you go past a test server:
+What it needs is boring: one container, one small volume. `Dockerfile`,
+`fly.toml` and `railway.json` are in the repo and cover it.
 
-- **Postgres instead of SQLite** once more than one process needs the data.
+### Railway
+
+1. **New Project → Deploy from GitHub repo.** It reads `railway.json` and
+   builds the Dockerfile.
+2. **Add a volume**, mount path `/data`. This is the step that matters — see
+   the warning below.
+3. **Variables:**
+
+   | Variable | Value |
+   |---|---|
+   | `DISCORD_PUBLIC_KEY` | from the Developer Portal |
+   | `DISCORD_BOT_TOKEN` | from the Bot tab |
+   | `DISCORD_APP_ID` | from General Information |
+   | `DB_FILE` | `/data/draw-tionary.db` |
+   | `PUBLIC_URL` | your real https URL, no trailing slash |
+
+   `PORT` is injected by Railway; don't set it.
+4. **Generate a domain** (or attach your own), then set `PUBLIC_URL` to it and
+   redeploy. `PUBLIC_URL` is what the bot writes into every link, so a stale
+   value produces buttons that go nowhere.
+
+### Fly
+
+```
+fly launch --no-deploy            # say no when it offers a database
+fly volumes create data --size 1 --region <region>
+fly secrets set DISCORD_PUBLIC_KEY=... DISCORD_BOT_TOKEN=... DISCORD_APP_ID=...
+fly deploy
+```
+
+Edit `app` and `PUBLIC_URL` in `fly.toml` first — Fly app names are global.
+
+### Then point Discord at it
+
+Developer Portal → General Information → **Interactions Endpoint URL** =
+`https://your-domain/interactions`. Discord sends a signed PING and refuses
+the URL if verification fails, so a successful save means it's working. Then
+run `npm run register` with `DISCORD_GUILD_ID` set.
+
+### Keep it to one instance
+
+SQLite has a single writer. Two replicas means two containers with two
+different databases and no error anywhere to tell you — scores and drawings
+would appear and disappear depending on which one served the request.
+`railway.json` pins `numReplicas: 1` and `fly.toml` uses a single mounted
+machine. Don't raise either until the store moves to Postgres.
+
+### Don't let it scale to zero
+
+Discord retries an interaction that doesn't respond within 3 seconds. A cold
+start blows that budget, and to players it looks like the bot ignoring them.
+`fly.toml` sets `min_machines_running = 1` for this reason. It's the main
+thing you're paying for — roughly a couple of dollars a month.
+
+### The volume mistake worth knowing about
+
+If `DB_FILE` points somewhere the volume isn't mounted, SQLite cheerfully
+creates the file on the container's own disk. Everything looks healthy until
+the next deploy wipes it.
+
+`bot/server.js` checks the directory is writable at startup and refuses to
+boot if it isn't, so a genuinely unmounted volume fails the deploy loudly. But
+it cannot tell a mounted `/data` from an unmounted one that happens to be
+writable — so confirm the mount path and `DB_FILE` agree. Deploy twice and
+check your scores survived; that's the real test.
+
+### Later, when you outgrow this
+
+- **Postgres instead of SQLite** once you want more than one instance.
   `bot/store.js` is the only file that changes.
 - **Object storage for rendered images.** The schema has `still_key` and
   `replay_key` columns waiting; nothing writes them yet.

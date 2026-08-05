@@ -71,7 +71,31 @@ button.
 |---|---|---|---|
 | Drawing replay | 1200 × 900 **[ours]** | GIF or WebP | Discord shows embedded images ~550px wide, so 1200 gives a crisp 2x. |
 | Drawing still | 1200 × 900 **[ours]** | PNG | Fallback and the "save my art" export. |
-| Tier badges | ~200 × 200 each **[ours]** | SVG | Must read at 16px tall beside the word. |
+| Tier badges | 200 × 109 **[ours]** | SVG | Gauge dials. Read down to ~24px tall; see below. |
+
+### Tier badges — what the gauges can and can't do
+
+`easy.svg`, `medium.svg`, `hard.svg` are half-round gauge dials: green needle
+left, amber needle up, red needle right.
+
+**They encode tier twice** — by needle angle and by color. That is the reason
+to keep this design rather than a colored pill: red/green colorblindness does
+not break them, because the needle carries the meaning on its own. Anything
+that replaces these should hold that property.
+
+**The floor is about 24px tall, not 16.** An earlier version of this spec said
+16px, which was wrong for a dial — the tick marks turn to fuzz well before
+that. Verified by rendering: crisp at 40px, fine at 32px, still readable at
+24px, gone at 16px. If something ever needs 16px, it wants a separate
+simplified variant with the ticks dropped, not a scaled-down version of these.
+
+**All three share `viewBox="0 45 200 109"`**, so they stay aligned with each
+other when set at a common height. Keep that in step if the artwork moves.
+
+**The white dial face behaves differently per theme.** On a light background
+it disappears and the mark reads as an arc; on dark it reads as a filled white
+semicircle. Both are legible, but Discord ships Light, Dark and Midnight, so
+this is worth a deliberate decision rather than an accident.
 
 ### The canvas aspect ratio is a design decision, not a technical one
 
