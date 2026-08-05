@@ -110,6 +110,43 @@ let token;
                          : bad("the canvas link was posted publicly");
 }
 
+// ---------------------------------------------------------------- public site
+
+{
+  const res  = await fetch(`${BASE}/`);
+  const html = await res.text();
+
+  /*
+   * `/` must be the landing page, not the canvas. Someone typing the domain
+   * should learn what the game is — landing on a drawing tool they have no
+   * session for, with a sticky "you're in preview" notice, is a bad front door
+   * for the URL that goes in the App Directory.
+   */
+  res.ok && /Add to Discord/.test(html) && !/id="board"/.test(html)
+    ? ok("/ serves the landing page, not the drawing canvas")
+    : bad("/ is not the landing page");
+
+  // The invite link has to carry the permissions the bot actually needs.
+  const invite = /discord\.com\/oauth2\/authorize\?[^"]+/.exec(html)?.[0] ?? "";
+  /permissions=18432/.test(invite) && /scope=bot(%20|\+)applications\.commands/.test(invite)
+    ? ok("the invite link asks for Send Messages + Embed Links and nothing else")
+    : bad("invite link has the wrong scopes or permissions: " + invite);
+
+  for (const [path, needle] of [["/privacy", "dt_viewer"], ["/terms", "Acceptable use"]]) {
+    const r = await fetch(BASE + path);
+    const body = await r.text();
+    r.ok && body.includes(needle)
+      ? ok(`${path} serves real content, not a placeholder`)
+      : bad(`${path} returned ${r.status} or is missing its substance`);
+  }
+
+  // Legal pages are linked from the landing page, because Discord's app
+  // listing asks for those URLs and reviewers follow them.
+  /href="\/privacy"/.test(html) && /href="\/terms"/.test(html)
+    ? ok("privacy and terms are reachable from the landing page")
+    : bad("legal pages are not linked from /");
+}
+
 /*
  * The link in that reply has to actually open something. `/draw` is a route,
  * not a file on disk, so a plain static handler answers it with a 404 and the

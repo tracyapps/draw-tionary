@@ -15,8 +15,14 @@ app/bundle.js
 *.db-wal
 *.db-shm
 
-# Design source. The server has no use for any of it.
+# Design source — the Affinity file alone is ~46 MB and the server has no use
+# for any of it. The tier badges are the exception: the landing page serves
+# them, so they have to be in the image.
 art/
+!art/easy.svg
+!art/medium.svg
+!art/hard.svg
+
 .DS_Store
 
 # The device-testing prototypes are never served. tools/ has to stay, because

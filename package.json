@@ -12,7 +12,9 @@
     "schema": "node --experimental-sqlite --no-warnings tools/schema-check.js",
     "e2e": "node --experimental-sqlite --no-warnings tools/e2e.js",
     "start": "node --experimental-sqlite bot/server.js",
-    "register": "node bot/register-commands.js"
+    "//dev": "Same as start, but reads .env. Hosts inject real environment variables, so --env-file must not be in `start` — the file doesn't exist there.",
+    "dev": "node --env-file=.env --experimental-sqlite bot/server.js",
+    "register": "node --env-file=.env bot/register-commands.js"
   },
   "devDependencies": {
     "jsdom": "^25.0.0"

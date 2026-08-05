@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Draw-tionary — Pictionary for Discord, on your own schedule</title>
+<meta name="description" content="Pictionary for friends who are never online at the same time. Somebody draws a word, everybody else guesses whenever they next open Discord. No timer, no pressure.">
+
+<!-- No SVG favicon yet: the source icon is a raster. Export a simplified
+     pencil-only SVG from Affinity and add it here as the first <link>. -->
+<link rel="icon" href="/app/icon/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/app/icon/apple-touch-icon.png">
+<meta name="theme-color" content="#1e1f22">
+
+<!-- Unfurl for the landing page only. The replay pages deliberately have no
+     Open Graph tags — encouraging people to paste those links around is the
+     opposite of what we want. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Draw-tionary">
+<meta property="og:title" content="Draw-tionary — Pictionary for Discord">
+<meta property="og:description" content="Somebody draws a word. Everybody else guesses whenever they next open Discord. No timer, no pressure, 124 colors.">
+<meta property="og:url" content="https://draw-tionary.app/">
+<meta property="og:image" content="https://draw-tionary.app/app/icon/og.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="stylesheet" href="/app/site.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="/">
+    <img src="/app/icon/icon-64.png" alt="" width="30" height="30">
+    Draw-tionary
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="#how">How to play</a>
+    <a href="#add">Add to Discord</a>
+    <a href="#safety">Safety</a>
+    <a href="/privacy">Privacy</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <h1>Pictionary for friends who are never online at the same time.</h1>
+      <p class="lead">
+        Somebody draws a word. It lands in your channel. You guess it whenever
+        you next open Discord — on the bus, in a meeting you shouldn't be in,
+        at 2am. Nobody is waiting on you, and nobody is watching you draw.
+      </p>
+      <div class="actions">
+        <!-- Scopes and permissions are derived from what the bot actually
+             does: it posts one embed with buttons. Nothing more. -->
+        <a class="btn btn-primary"
+           href="https://discord.com/oauth2/authorize?client_id=1534509794096975962&permissions=18432&scope=bot%20applications.commands">
+          Add to Discord
+        </a>
+        <a class="btn" href="#how">See how it works</a>
+      </div>
+    </div>
+
+    <div class="art-slot">
+      <!-- Replace with a real screenshot or cover crop; keep the 16:9 box so
+           the page doesn't reflow when it loads. -->
+      Art slot — 16:9. A drawing mid-replay, or the cover art crop.
+    </div>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------------- how -->
+
+<section id="how">
+  <div class="wrap">
+    <h2>How a round goes</h2>
+    <p class="lead prose">Five steps, none of them timed.</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Ask for a word</h3>
+        <p>Run <span class="cmd">/draw</span>. You get three words — one easy,
+          one medium, one hard — and a private link only you can open.</p>
+      </li>
+      <li>
+        <h3>Draw it</h3>
+        <p>Pencil, finger, or mouse, all welcome. There's no timer, so take
+          four seconds or take an hour.</p>
+      </li>
+      <li>
+        <h3>Post it</h3>
+        <p>Your drawing appears in the channel with the word hidden behind a
+          row of empty boxes.</p>
+      </li>
+      <li>
+        <h3>Everyone guesses</h3>
+        <p>They can watch the whole thing being drawn, stroke by stroke, which
+          is usually funnier than the finished picture.</p>
+      </li>
+      <li>
+        <h3>Points go out</h3>
+        <p>To whoever guesses it — and to you, for drawing something people
+          could actually work out.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- words -->
+
+<section id="words">
+  <div class="wrap">
+    <h2>Three words, three difficulties</h2>
+    <p class="lead prose">
+      Harder words are worth more. Pick the hard one and fail gloriously —
+      nothing is deducted for a drawing nobody gets.
+    </p>
+
+    <ul class="tiers">
+      <li class="tier-card easy">
+        <img src="/art/easy.svg" alt="" height="46">
+        <div class="name">Easy</div>
+        <div class="pts">10 pts</div>
+        <p class="count">125 words</p>
+      </li>
+      <li class="tier-card medium">
+        <img src="/art/medium.svg" alt="" height="46">
+        <div class="name">Medium</div>
+        <div class="pts">20 pts</div>
+        <p class="count">100 words</p>
+      </li>
+      <li class="tier-card hard">
+        <img src="/art/hard.svg" alt="" height="46">
+        <div class="name">Hard</div>
+        <div class="pts">35 pts</div>
+        <p class="count">70 words</p>
+      </li>
+    </ul>
+
+    <p style="margin-top:24px" class="prose">
+      Guess early and you'll earn a bonus on top — up to half the word's value
+      again. The window is generous (30 seconds for easy, a full minute for
+      hard) and re-watching a drawing costs nothing, so being fast is a bonus
+      rather than the whole game.
+    </p>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- why -->
+
+<section id="why">
+  <div class="wrap">
+    <h2>Things we decided on purpose</h2>
+
+    <ul class="features">
+      <li>
+        <h3>Wrong guesses cost nothing</h3>
+        <p>Guess as many times as you like. The failure mode worth worrying
+          about is people not joining in, not people guessing badly.</p>
+      </li>
+      <li>
+        <h3>No timer, anywhere</h3>
+        <p>Not on drawing, not on guessing. The countdown is the part of
+          Pictionary that keeps quiet people quiet.</p>
+      </li>
+      <li>
+        <h3>All 124 colors, free</h3>
+        <p>No unlocking, no points to spend, no premium palette. They're just
+          there, for everyone, from the first round.</p>
+      </li>
+      <li>
+        <h3>Pressure-sensitive if your device is</h3>
+        <p>Apple Pencil and drawing tablets get variable stroke width. A
+          finger on a phone gets a clean constant line.</p>
+      </li>
+      <li>
+        <h3>Your drawings stay</h3>
+        <p>The thing you spent an hour on doesn't expire. Go back and watch it
+          again whenever you want.</p>
+      </li>
+      <li>
+        <h3>Nobody watches you draw</h3>
+        <p>No live spectating, no "3 people are watching." You draw alone and
+          share when you're ready.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- add -->
+
+<section id="add">
+  <div class="wrap">
+    <h2>Adding it to your server</h2>
+
+    <div class="prose">
+      <ol class="prose">
+        <li>Press <strong>Add to Discord</strong> and pick your server. You'll
+          need <em>Manage Server</em> permission there.</li>
+        <li>Approve the two permissions it asks for — that's the whole list.</li>
+        <li>Run <span class="cmd">/draw</span> in any channel you want to play
+          in. That's it; there's nothing to configure.</li>
+      </ol>
+
+      <div class="callout">
+        <h3 style="margin-top:0">It asks for very little</h3>
+        <p>Draw-tionary needs exactly two permissions — <strong>Send
+          Messages</strong> and <strong>Embed Links</strong> — in the channels
+          you play in.</p>
+        <p>It cannot read your message history, see your member list, or read
+          anything you type outside of a guess you deliberately submit. It
+          doesn't hold a live connection to your server at all.</p>
+      </div>
+
+      <h3 style="margin-top:2em">Commands</h3>
+      <p>
+        <span class="cmd">/draw</span> — get a word and a canvas.<br>
+        <span class="cmd">/scores</span> — see who's ahead in this server.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- safety -->
+
+<section id="safety">
+  <div class="wrap">
+    <h2>Keeping it friendly</h2>
+    <p class="lead prose">
+      This was built for a small community, so moderation came first rather
+      than after something went wrong.
+    </p>
+
+    <ul class="features">
+      <li>
+        <h3>Anyone can report</h3>
+        <p>Every drawing carries a report button, and reports are anonymous —
+          the drawer never learns who flagged them.</p>
+      </li>
+      <li>
+        <h3>Two reports hide it</h3>
+        <p>A drawing with two reports hides itself pending review. No single
+          person can hide someone's work on their own.</p>
+      </li>
+      <li>
+        <h3>Moderators can remove anything</h3>
+        <p>Anyone with Manage Messages in your server can take a drawing down
+          for good.</p>
+      </li>
+      <li>
+        <h3>Delete your own work</h3>
+        <p>Your drawing is yours. You can remove it whenever you like, without
+          asking anyone.</p>
+      </li>
+    </ul>
+
+    <p class="prose" style="margin-top:28px">
+      Scores are per-server, and drawings never travel between servers. See the
+      <a href="/privacy">privacy policy</a> for exactly what's stored.
+    </p>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Draw-tionary</span>
+    <nav aria-label="Footer">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="#add">Add to Discord</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

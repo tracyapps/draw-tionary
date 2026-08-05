@@ -463,8 +463,25 @@ async function handleWatchPage(req, res, url) {
   }).end();
 }
 
+/*
+ * The public pages. Cached, unlike the app pages — they hold nothing
+ * personal and change only when we deploy.
+ */
+async function servePublicPage(res, name) {
+  try {
+    const html = await readFile(join(root, "app", name));
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=300"
+    });
+    res.end(html);
+  } catch {
+    res.writeHead(404).end("not found");
+  }
+}
+
 async function serveStatic(req, res, url) {
-  const rel = url.pathname === "/" ? "/app/draw.html" : url.pathname;
+  const rel = url.pathname;
   const safe = normalize(rel).replace(/^(\.\.[/\\])+/, "");
   const file = join(root, safe);
 
@@ -493,6 +510,14 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET"  && url.pathname === "/health")       return json(res, 200, { ok: true });
 
     // Pages before static, so /draw isn't mistaken for a file called "draw".
+    //
+    // `/` is the landing page, NOT the canvas. Someone who types the domain
+    // should learn what the game is, not land on a drawing tool they have no
+    // session for and cannot post from.
+    if (req.method === "GET"  && url.pathname === "/")             return await servePublicPage(res, "index.html");
+    if (req.method === "GET"  && url.pathname === "/privacy")      return await servePublicPage(res, "privacy.html");
+    if (req.method === "GET"  && url.pathname === "/terms")        return await servePublicPage(res, "terms.html");
+
     if (req.method === "GET"  && url.pathname === "/draw")         return await servePage(res, "draw.html");
     if (req.method === "GET"  && url.pathname.startsWith("/watch/")) return await handleWatchPage(req, res, url);
 

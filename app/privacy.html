@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy — Draw-tionary</title>
+<meta name="description" content="What Draw-tionary stores, why, for how long, and how to have it deleted.">
+<meta name="robots" content="index,follow">
+
+<!-- No SVG favicon yet: the source icon is a raster. Export a simplified
+     pencil-only SVG from Affinity and add it here as the first <link>. -->
+<link rel="icon" href="/app/icon/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/app/icon/apple-touch-icon.png">
+<meta name="theme-color" content="#1e1f22">
+
+<link rel="stylesheet" href="/app/site.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="/">
+    <img src="/app/icon/icon-64.png" alt="" width="30" height="30">
+    Draw-tionary
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="/#how">How to play</a>
+    <a href="/#add">Add to Discord</a>
+    <a href="/privacy" aria-current="page">Privacy</a>
+    <a href="/terms">Terms</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap legal">
+  <div class="prose">
+
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: <!-- UPDATE ON PUBLISH -->5 August 2026</p>
+
+    <p class="lead">
+      Draw-tionary is a drawing game for Discord. This page describes exactly
+      what it stores, why it needs it, how long it keeps it, and how to have it
+      removed. It was written against the actual database schema rather than
+      from a template.
+    </p>
+
+    <div class="callout">
+      <p><strong>The short version.</strong> Draw-tionary stores your Discord
+      user ID, the drawings you make, the guesses you submit, and your score.
+      It never sees your email, your real name, your message history, or
+      anything you type in Discord outside of a guess you deliberately submit.
+      Nothing is sold, and nothing is shared with advertisers.</p>
+    </div>
+
+    <h2>Who runs this</h2>
+    <p>
+      Draw-tionary is operated by an individual, not a company.
+      <!-- Replace with the contact address you want to publish. A role
+           address is wiser than a personal one. -->
+      Contact: <a href="mailto:privacy@draw-tionary.app">privacy@draw-tionary.app</a>
+    </p>
+
+    <h2>What is stored</h2>
+
+    <h3>Identifiers from Discord</h3>
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Why it's needed</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Your Discord user ID</td>
+          <td>To know whose drawing is whose, stop you guessing your own word,
+            and keep your score. This is the numeric ID, not your username.</td>
+        </tr>
+        <tr>
+          <td>Server (guild) ID</td>
+          <td>Scores and drawings are kept per server, so one community's game
+            never mixes with another's.</td>
+        </tr>
+        <tr>
+          <td>Channel ID and message ID</td>
+          <td>So the bot can post a drawing in the right place and find the
+            round again when someone presses a button on it.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      Draw-tionary does not receive or store your email address, your real
+      name, your avatar, your IP address, or your Discord password. It has no
+      access to your message history — it holds no live connection to your
+      server and cannot read messages at all.
+    </p>
+
+    <h3>Game content you create</h3>
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Why it's needed</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Your drawings, as stroke data</td>
+          <td>Every line, colour, and the timing between them, so the drawing
+            can be replayed stroke by stroke. This is the game.</td>
+        </tr>
+        <tr>
+          <td>The word you were dealt</td>
+          <td>To score guesses against it.</td>
+        </tr>
+        <tr>
+          <td>Every guess you submit, including wrong ones</td>
+          <td>To stop double-scoring, and to count your attempts. Wrong guesses
+            are shown only to you, never to other players.</td>
+        </tr>
+        <tr>
+          <td>Your score per server</td>
+          <td>For the <code>/scores</code> leaderboard.</td>
+        </tr>
+        <tr>
+          <td>Reports you submit on a drawing</td>
+          <td>So two reports can hide a drawing for review. Reports are visible
+            only to moderators — the drawer never learns who reported them.</td>
+        </tr>
+        <tr>
+          <td>Moderator actions</td>
+          <td>Who removed or restored a drawing, and when, so there is a record
+            that a review happened.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Session data</h3>
+    <p>
+      When you open a drawing canvas or a replay, Draw-tionary creates a
+      short-lived record linking your browser to your Discord account:
+    </p>
+    <ul>
+      <li><strong>Drawing sessions</strong> — a single-use link that expires
+        after 30 minutes.</li>
+      <li><strong>Replay grants</strong> — a single-use link that expires after
+        90 seconds and is exchanged immediately for a cookie.</li>
+      <li><strong>A viewer cookie</strong> (<code>dt_viewer</code>) — set when
+        you open a replay, valid for 7 days. It holds a random token and
+        nothing else. It is <code>HttpOnly</code>, so page scripts cannot read
+        it.</li>
+    </ul>
+
+    <h2>Cookies</h2>
+    <p>
+      Draw-tionary sets exactly one cookie, <code>dt_viewer</code>, described
+      above. It exists so a replay page knows whether you already solved that
+      drawing and can show you the answer you earned.
+    </p>
+    <p>
+      There are no analytics cookies, no advertising cookies, and no
+      third-party trackers on any page. Nothing follows you off the site.
+    </p>
+
+    <h2>How long it's kept</h2>
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Retention</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Drawings, guesses, and scores</td>
+          <td>Kept until deleted. Drawings deliberately do not expire — the
+            point is that you can go back and find the thing you spent an hour
+            on.</td>
+        </tr>
+        <tr>
+          <td>Removed drawings</td>
+          <td>The record that a removal happened is kept for moderation
+            history. The artwork itself is erased after a cooling-off
+            period.</td>
+        </tr>
+        <tr>
+          <td>Drawing sessions and replay grants</td>
+          <td>Deleted automatically once expired; swept hourly.</td>
+        </tr>
+        <tr>
+          <td>Viewer cookie</td>
+          <td>7 days, or until you clear your browser's cookies.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Who it's shared with</h2>
+    <p>
+      Nobody. Draw-tionary does not sell data, does not share it with
+      advertisers, and has no analytics or tracking provider.
+    </p>
+    <p>Two unavoidable parties are involved in running it:</p>
+    <ul>
+      <li><strong>Discord</strong> — the game lives inside Discord, so your
+        drawings and scores are posted there. Discord's own
+        <a href="https://discord.com/privacy" rel="noopener">privacy policy</a>
+        covers that.</li>
+      <li><strong>Railway</strong> — the hosting provider where the server and
+        its database run.</li>
+    </ul>
+
+    <h2>Your choices</h2>
+    <ul>
+      <li><strong>Delete a drawing.</strong> Every drawing you make has a
+        delete option. You don't need to ask anyone.</li>
+      <li><strong>Delete everything.</strong> Email the address above from an
+        account you can verify, including your Discord user ID, and your
+        drawings, guesses and scores will be erased.</li>
+      <li><strong>Get a copy of your data.</strong> Ask, and you'll receive
+        what's stored about you in a readable format.</li>
+      <li><strong>Stop entirely.</strong> Remove the bot from your server, or
+        simply stop using <code>/draw</code>. Nothing is collected when you
+        aren't playing.</li>
+    </ul>
+    <p>
+      Requests are handled within 30 days. Depending on where you live you may
+      have additional rights under laws such as the GDPR or CCPA — including
+      access, correction, deletion, and complaint to a regulator. The steps
+      above are how to exercise them.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      Discord requires users to be at least 13, or older where local law sets a
+      higher age. Draw-tionary is not directed at children under 13 and does
+      not knowingly store their data. If you believe a child under 13 has used
+      it, contact the address above and their data will be removed.
+    </p>
+
+    <h2>Security</h2>
+    <p>
+      All traffic is served over HTTPS. Links to a canvas or a replay are
+      single-use and short-lived, and the cookie that replaces them cannot be
+      read by page scripts. The word being guessed is never sent to a player
+      who hasn't earned it.
+    </p>
+    <p>
+      No system is perfectly secure, and this one is run by one person rather
+      than a security team. Please don't put anything sensitive in a drawing.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      If this policy changes materially, the date at the top will be updated
+      and a note will be posted on the
+      <a href="https://github.com/" rel="noopener">project repository</a>.
+      <!-- Replace with the real repository URL once public. -->
+    </p>
+
+    <div class="callout" style="margin-top:2.5em">
+      <p><strong>Note.</strong> This policy was written to describe what the
+      software genuinely does, and is not legal advice. If Draw-tionary grows
+      beyond a hobby project, have a lawyer review it — particularly the
+      GDPR and children's-privacy sections, which depend on where your players
+      actually live.</p>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Draw-tionary</span>
+    <nav aria-label="Footer">
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="/">Home</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

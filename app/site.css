@@ -1,0 +1,366 @@
+/*
+ * Shared styling for the public pages — landing, privacy, terms.
+ *
+ * Deliberately separate from the canvas and replay pages. Those two are an
+ * application: full-height, no scroll, chrome pushed to the edges. These are
+ * documents. Sharing one stylesheet between the two would mean every change
+ * to a marketing page risking a regression in the drawing tool.
+ *
+ * Colour variables are copied from app/draw.html rather than imported, so the
+ * pages look like the same product. If the app's palette moves, move these.
+ */
+
+:root {
+  --bg:        #1e1f22;
+  --panel:     #2b2d31;
+  --panel-2:   #313338;
+  --line:      #3f4147;
+  --ink:       #dbdee1;
+  --ink-dim:   #949ba4;
+  --accent:    #5865f2;
+  --accent-hi: #4752c4;
+  --good:      #23a55a;
+  --warn:      #f0b232;
+  --bad:       #f23f43;
+  --radius:    10px;
+
+  --measure:   68ch;   /* comfortable line length for the legal pages */
+  --page:      1080px;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  /* Anchor links land below the sticky header rather than under it. */
+  scroll-padding-top: 84px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- skip link ---------- */
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 12px 18px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 0 0 var(--radius) 0;
+  font-weight: 600;
+}
+.skip:focus { left: 0; }
+
+/* ---------- header ---------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px max(16px, env(safe-area-inset-left));
+  background: rgba(30, 31, 34, .92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: -.01em;
+}
+.brand img { width: 30px; height: 30px; border-radius: 7px; display: block; }
+
+.site-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.site-nav a {
+  color: var(--ink-dim);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.site-nav a:hover { color: var(--ink); background: var(--panel-2); }
+.site-nav a[aria-current="page"] { color: #fff; background: var(--panel-2); }
+
+/* ---------- layout ---------- */
+
+main { display: block; }
+
+.wrap {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0 max(16px, env(safe-area-inset-left));
+}
+
+.prose { max-width: var(--measure); }
+
+section { padding: 68px 0; }
+section + section { border-top: 1px solid var(--line); }
+
+h1, h2, h3 { line-height: 1.2; letter-spacing: -.02em; margin: 0 0 .5em; }
+h1 { font-size: clamp(34px, 6vw, 54px); }
+h2 { font-size: clamp(24px, 3.4vw, 32px); }
+h3 { font-size: 18px; }
+
+p { margin: 0 0 1.1em; }
+.lead { font-size: clamp(17px, 2.2vw, 21px); color: var(--ink-dim); }
+
+a { color: #a8b1ff; }
+a:hover { color: #c3c9ff; }
+
+:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
+
+/* ---------- hero ---------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 48px;
+  align-items: center;
+  padding: 72px 0 60px;
+}
+
+.hero h1 { margin-bottom: 16px; }
+.hero .lead { margin-bottom: 28px; }
+
+/*
+ * Art slot. Sized to the real assets so the layout does not jump when the
+ * images land — replace the placeholder, keep the box.
+ */
+.art-slot {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.art-slot img { width: 100%; height: 100%; object-fit: contain; border-radius: 13px; }
+
+/* ---------- buttons ---------- */
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  /* 44px floor even though the text is 15px — thumbs, not cursors. */
+  min-height: 46px;
+  padding: 12px 22px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn:hover { background: #3a3d44; color: var(--ink); }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--accent-hi); color: #fff; }
+
+/* ---------- steps ---------- */
+
+.steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 22px 20px 20px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 30px; height: 30px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.steps h3 { margin-bottom: 6px; }
+.steps p { margin: 0; color: var(--ink-dim); font-size: 15px; }
+
+/* ---------- tiers ---------- */
+
+.tiers {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tier-card {
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+}
+.tier-card.easy   { border-left-color: var(--good); }
+.tier-card.medium { border-left-color: var(--warn); }
+.tier-card.hard   { border-left-color: var(--bad); }
+
+.tier-card img { height: 46px; width: auto; display: block; margin-bottom: 12px; }
+
+.tier-card .name {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 12px;
+}
+.tier-card.easy   .name { color: #7ee2a8; }
+.tier-card.medium .name { color: #ffd479; }
+.tier-card.hard   .name { color: #ff9d9f; }
+
+.tier-card .pts {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 4px;
+}
+.tier-card .count { color: var(--ink-dim); font-size: 14px; margin: 0; }
+
+/* ---------- feature list ---------- */
+
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 20px 34px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.features h3 { margin-bottom: 4px; }
+.features p { margin: 0; color: var(--ink-dim); font-size: 15px; }
+
+/* ---------- callout ---------- */
+
+.callout {
+  padding: 20px 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+}
+.callout :last-child { margin-bottom: 0; }
+
+/* ---------- commands ---------- */
+
+.cmd {
+  font: 600 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* ---------- legal pages ---------- */
+
+.legal { padding: 52px 0 80px; }
+.legal h2 { margin-top: 2em; }
+.legal h2:first-of-type { margin-top: 1em; }
+.legal ul { padding-left: 1.25em; }
+.legal li { margin-bottom: .5em; }
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+  font-size: 15px;
+}
+.legal th, .legal td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.legal th { color: #fff; font-weight: 600; }
+.legal td { color: var(--ink-dim); }
+.updated { color: var(--ink-dim); font-size: 14px; }
+
+/* ---------- footer ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  padding: 32px 0 48px;
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+.site-footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  align-items: center;
+}
+.site-footer nav { display: flex; gap: 18px; flex-wrap: wrap; margin-left: auto; }
+.site-footer a { color: var(--ink-dim); }
+.site-footer a:hover { color: var(--ink); }
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; gap: 32px; padding-top: 44px; }
+  section { padding: 48px 0; }
+}
+
+@media (max-width: 520px) {
+  .actions .btn { width: 100%; }
+  .site-nav a { padding: 8px 7px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}

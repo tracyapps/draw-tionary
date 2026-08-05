@@ -30,8 +30,12 @@ That prints a public HTTPS URL. Put it in `PUBLIC_URL`.
 ## 3. Start the server
 
 ```
-npm start
+npm run dev
 ```
+
+`dev` reads `.env`; `start` does not, and that difference is deliberate —
+Railway and Fly inject real environment variables and have no `.env` file, so
+a `--env-file` flag in `start` would crash the container on boot.
 
 Then in the Developer Portal, **General Information → Interactions Endpoint
 URL**, enter `<your tunnel URL>/interactions` and save.
@@ -172,17 +176,29 @@ What it needs is boring: one container, one small volume. `Dockerfile`,
    builds the Dockerfile.
 2. **Add a volume**, mount path `/data`. This is the step that matters — see
    the warning below.
-3. **Variables:**
+3. **Variables** — service → Variables tab. Not `.env`, which is gitignored
+   and never reaches the server.
 
-   | Variable | Value |
-   |---|---|
-   | `DISCORD_PUBLIC_KEY` | from the Developer Portal |
-   | `DISCORD_BOT_TOKEN` | from the Bot tab |
-   | `DISCORD_APP_ID` | from General Information |
-   | `DB_FILE` | `/data/draw-tionary.db` |
-   | `PUBLIC_URL` | your real https URL, no trailing slash |
+   | Variable | Value | Secret? |
+   |---|---|---|
+   | `DISCORD_APP_ID` | General Information → Application ID | no |
+   | `DISCORD_PUBLIC_KEY` | General Information → Public Key | no |
+   | `DISCORD_BOT_TOKEN` | Bot → Reset Token | **yes** |
+   | `DB_FILE` | `/data/draw-tionary.db` | no |
+   | `PUBLIC_URL` | your https URL, no trailing slash | no |
+   | `PORT` | `3000` | no |
 
-   `PORT` is injected by Railway; don't set it.
+   Set `PORT` explicitly rather than relying on auto-detection. Railway asks
+   for a **target port** when you attach a domain, and that number has to match
+   the port the process is actually listening on. Pinning it to 3000 means the
+   Dockerfile, the variable and the domain all agree, instead of three places
+   that can quietly drift apart.
+
+   `DISCORD_GUILD_ID` is not a server variable. It only matters to
+   `npm run register`, which you run from your own machine.
+
+   `EMBEDDED_ACTIVITY` stays unset until the pages run inside an Activity
+   iframe.
 4. **Generate a domain** (or attach your own), then set `PUBLIC_URL` to it and
    redeploy. `PUBLIC_URL` is what the bot writes into every link, so a stale
    value produces buttons that go nowhere.
@@ -197,6 +213,38 @@ fly deploy
 ```
 
 Edit `app` and `PUBLIC_URL` in `fly.toml` first — Fly app names are global.
+
+### Pointing a domain at it (Namecheap)
+
+Service → **Settings → Networking → Public Networking → + Custom Domain**.
+It asks for a **target port**: enter `3000`.
+
+Railway then gives you a CNAME target and a TXT record. **Both are required.**
+Skipping the TXT is the classic mistake, and the symptom is misleading —
+requests return **404 even after the CNAME resolves**, so it reads like a
+broken app rather than an unverified domain.
+
+Namecheap → Domain List → Manage → **Advanced DNS**:
+
+| Type | Host | Value |
+|---|---|---|
+| ALIAS Record | `@` | the target Railway shows you |
+| TXT Record | as shown | as shown |
+
+Certificates issue within about an hour of DNS updating.
+
+Namecheap's BasicDNS supports ALIAS at the apex, which is what makes a bare
+domain work — Railway has no static IP, so a plain A record isn't an option.
+Cloudflare's CNAME flattening does the same job if you'd rather keep DNS
+there; if you do, set the record to DNS-only (grey cloud) until the
+certificate issues, because proxying can stall it.
+
+A subdomain like `play.example.app` is a plain CNAME and avoids the question
+entirely. Nobody types this URL — it lives behind a Discord button.
+
+**On `.app` domains:** the whole TLD is HSTS-preloaded, so browsers refuse
+plain http with no click-through. Until DNS resolves and the certificate
+issues, the domain won't load at all — that's expected, not a broken deploy.
 
 ### Then point Discord at it
 
