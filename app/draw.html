@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Draw-tionary</title>
+<style>
+  :root {
+    --bg:        #1e1f22;
+    --panel:     #2b2d31;
+    --panel-2:   #313338;
+    --line:      #3f4147;
+    --ink:       #dbdee1;
+    --ink-dim:   #949ba4;
+    --accent:    #5865f2;
+    --good:      #23a55a;
+    --warn:      #f0b232;
+    --bad:       #f23f43;
+    --radius:    8px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- header ---------- */
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+    padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .01em;
+  }
+
+  .ctx {
+    font-size: 11px;
+    color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .spacer { margin-left: auto; }
+
+  /* ---------- canvas ---------- */
+
+  #stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #ffffff;
+    background-image:
+      linear-gradient(45deg, #f2f3f5 25%, transparent 25%, transparent 75%, #f2f3f5 75%),
+      linear-gradient(45deg, #f2f3f5 25%, transparent 25%, transparent 75%, #f2f3f5 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+
+  #board {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* critical: stops the browser stealing the gesture for scroll/zoom */
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  #hint {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 4px;
+    text-align: center;
+    color: #6b7280;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  #hint strong { display: block; font-size: 15px; color: #4b5563; }
+  #hint.gone { opacity: 0; }
+
+  /* ---------- toolbar ---------- */
+
+  .bar {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+
+  .grp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .grp + .grp {
+    padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+
+  .grp.menuwrap { margin-left: auto; }
+
+  #togglePalette { display: inline-flex; align-items: center; gap: 7px; }
+  #togglePalette .dot {
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.25);
+  }
+
+  button, .btn {
+    appearance: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 7px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  button:hover { background: #3a3d44; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color:#fff; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #4752c4; }
+
+  :focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+
+  /* ---------- palette ---------- */
+
+  #palette {
+    display: grid;
+    grid-template-rows: repeat(4, 20px);
+    grid-auto-flow: column;
+    grid-auto-columns: 20px;
+    gap: 3px;
+    padding: 4px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+  }
+
+  .sw {
+    width: 20px; height: 20px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .sw[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #fff;
+    border-color: #fff;
+  }
+
+  /* divider between palette groups — spans the full four-row column */
+  .sep {
+    grid-row: span 4;
+    width: 1px;
+    margin: 0 4px;
+    background: var(--line);
+  }
+
+  input[type="color"] {
+    width: 34px; height: 34px;
+    padding: 2px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+
+  /* ---------- palette panel ---------- */
+
+  #palettePanel {
+    flex: none;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    padding: 8px 12px;
+  }
+  #palettePanel[hidden] { display: none; }
+
+  /* Segmented control — reads as one object attached to the swatches below it */
+  .chips {
+    display: flex;
+    margin-bottom: 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .chip {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 5px 12px;
+    border: 0;
+    border-radius: 0;
+    background: var(--bg);
+    white-space: nowrap;
+  }
+  .chip + .chip { border-left: 1px solid var(--line); }
+  .chip .dot {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,.2);
+  }
+  .chip[aria-pressed="true"]  { background: var(--panel-2); color: #fff; }
+  .chip[aria-pressed="false"] { opacity: .45; }
+  .chip:focus-visible { outline-offset: -2px; }
+
+  .palette-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  /* Explicit pan buttons — horizontal scroll is unreliable with a trackpad,
+     a touch screen edge, or a mouse without a tilt wheel. */
+  .pan {
+    flex: none;
+    width: 30px;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .pan[disabled] { opacity: .25; }
+
+  /* ---------- more menu ---------- */
+
+  .menuwrap { position: relative; }
+
+  .menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    min-width: 232px;
+    padding: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .menu[hidden] { display: none; }
+
+  .menu button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    padding: 9px 10px;
+  }
+  .menu button:hover { background: #3f434b; }
+
+  .menu .field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .menu .field label { flex: none; }
+  .menu .field input[type="range"] { flex: 1; width: auto; }
+
+  .menu hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 6px 4px;
+  }
+
+  /* Destructive actions live behind the menu and behind a confirm step, so a
+     fat thumb on a phone can never wipe a drawing someone spent an hour on. */
+  .menu button.danger { color: #ff9d9f; }
+  .menu button.danger:hover { background: #4a2b2d; }
+  .menu button.confirming {
+    background: var(--bad);
+    color: #fff;
+  }
+
+  /* ---------- word card modal ---------- */
+
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.66);
+  }
+  .backdrop[hidden] { display: none; }
+
+  .modal {
+    width: min(420px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+
+  .modal h2 { margin: 0 0 4px; font-size: 16px; }
+  .modal p  { margin: 0 0 16px; font-size: 13px; color: var(--ink-dim); }
+
+  .choices { display: grid; gap: 8px; margin-bottom: 16px; }
+
+  .choice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 13px 15px;
+    font-size: 16px;
+    text-align: left;
+    border-radius: 9px;
+  }
+  .choice .tier {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+  .choice .tier.easy   { color: #7ee2a8; border-color: #2c5c41; }
+  .choice .tier.medium { color: #ffd479; border-color: #6b5527; }
+  .choice .tier.hard   { color: #ff9d9f; border-color: #6e3436; }
+
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-actions button { flex: 1; }
+
+  .warn-note {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #3a2f1b;
+    border-left: 3px solid var(--warn);
+    font-size: 12.5px;
+    color: #f5deb0;
+  }
+  .warn-note[hidden] { display: none; }
+
+  /* ---------- current word readout ---------- */
+
+  #wordBar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+  }
+  #wordBar[hidden] { display: none; }
+  #wordBar .label { color: var(--ink-dim); }
+  #wordBar .word  { color: #fff; font-weight: 600; }
+  #wordBar .pts   { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+
+  input[type="range"] { width: 96px; accent-color: var(--accent); }
+
+  label { font-size: 12px; color: var(--ink-dim); }
+
+  /* ---------- notices ---------- */
+
+  /*
+   * One place for anything the server tells us: an expired link, a failed
+   * submit, a drawing that already posted. role="alert" on the element means
+   * a screen reader announces it without us moving focus mid-drawing.
+   */
+  #notice {
+    position: absolute;
+    top: 10px; left: 50%;
+    transform: translateX(-50%);
+    max-width: min(420px, calc(100% - 20px));
+    padding: 10px 14px;
+    background: rgba(24,25,28,.95);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ink-dim);
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 1.45;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  #notice[hidden] { display: none; }
+  #notice.good { border-left-color: var(--good); }
+  #notice.warn { border-left-color: var(--warn); }
+  #notice.bad  { border-left-color: var(--bad);  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  @media (max-width: 640px) {
+    #palette { grid-template-rows: repeat(4, 22px); grid-auto-columns: 22px; }
+    .sw { width: 22px; height: 22px; }
+    .grp + .grp { padding-left: 0; border-left: 0; }
+    .grp.menuwrap { margin-left: auto; }
+    .menu { min-width: 200px; }
+
+    /* touch targets stay comfortable even as the bar tightens */
+    .bar button { padding: 9px 12px; }
+    .pan { width: 34px; }
+
+    /*
+     * Native color pickers are miserable on a touch screen — a tiny gradient
+     * square you poke at with a fingertip. Drop it on phones and let the
+     * swatches use the full width instead; 124 hand-picked colors is plenty.
+     */
+    #custom { display: none; }
+    .chips { width: 100%; }
+    .chip { padding: 6px 4px; font-size: 11px; }
+    .chip .dot { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Draw-tionary</h1>
+  <span class="ctx" id="ctx">—</span>
+  <span class="spacer"></span>
+</header>
+
+<div id="stage">
+  <canvas id="board" role="img" aria-label="Drawing canvas. Use a pencil, finger, or mouse to draw."></canvas>
+
+  <div id="hint">
+    <strong>Draw here</strong>
+    <span>pencil, finger, or mouse — all welcome</span>
+  </div>
+
+  <div id="notice" role="alert" hidden></div>
+</div>
+
+<section id="palettePanel" aria-label="Colors">
+  <div class="chips" id="chips" role="group" aria-label="Show or hide color groups"></div>
+
+  <div class="palette-row">
+    <button class="pan" id="panLeft" aria-label="Scroll colors left">◀</button>
+    <div id="palette" role="group" aria-label="Color palette"></div>
+    <button class="pan" id="panRight" aria-label="Scroll colors right">▶</button>
+    <input type="color" id="custom" value="#5865f2" aria-label="Custom color">
+  </div>
+</section>
+
+<div class="bar">
+  <div class="grp">
+    <button id="togglePalette" aria-expanded="true" aria-controls="palettePanel">
+      <span class="dot" id="currentDot" aria-hidden="true"></span> Colors
+    </button>
+  </div>
+
+  <div class="grp">
+    <label for="size">Size</label>
+    <input type="range" id="size" min="1" max="48" value="6" aria-label="Brush size">
+    <span class="ctx" id="sizeOut" aria-hidden="true">6</span>
+  </div>
+
+  <div class="grp">
+    <button id="brush" aria-pressed="true">Brush</button>
+    <button id="eraser" aria-pressed="false">Eraser</button>
+    <button id="undo" disabled>Undo</button>
+  </div>
+
+  <div class="grp menuwrap">
+    <button id="moreBtn" aria-expanded="false" aria-haspopup="true" aria-controls="moreMenu">
+      More ▾
+    </button>
+
+    <div class="menu" id="moreMenu" role="menu" aria-label="More actions" hidden>
+      <button role="menuitem" id="replay" disabled>Replay drawing</button>
+
+      <hr>
+
+      <button role="menuitem" id="png" disabled>Save PNG</button>
+      <button role="menuitem" id="json" disabled>Save drawing data</button>
+
+      <hr>
+
+      <button role="menuitem" id="startOver" class="danger">Start over with a different word</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <button id="submit" class="primary" disabled>Post it</button>
+  </div>
+</div>
+
+<div id="wordBar" hidden>
+  <span class="label">Drawing:</span>
+  <span class="word" id="wordName">—</span>
+  <span class="pts" id="wordPts"></span>
+</div>
+
+<div class="backdrop" id="cardModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cardTitle">
+    <h2 id="cardTitle">Choose a word</h2>
+    <p>Harder words are worth more. There's no timer — take as long as you like.</p>
+
+    <p class="warn-note" id="cardWarn" hidden>
+      Picking a different word will clear your current drawing.
+    </p>
+
+    <div class="choices" id="cardOut"></div>
+
+    <div class="modal-actions">
+      <button id="cancelCard" hidden>Keep drawing</button>
+    </div>
+  </div>
+</div>
+
+<p class="sr-only" id="status" role="status"></p>
+
+<!-- Absolute, because this page is served at /draw, not from /app. -->
+<script src="/app/bundle.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+
+  const stage = $("stage");
+  const cv    = $("board");
+  const ctx   = cv.getContext("2d", { willReadFrequently: false });
+
+  // ---------------------------------------------------------------- state
+
+  /*
+   * A stroke stores points in NORMALISED coordinates: both x and y are
+   * divided by the canvas WIDTH (not height). Dividing both axes by the same
+   * number preserves aspect ratio, so a drawing made in a cramped Discord
+   * Activity iframe replays correctly on a full-screen phone and vice versa.
+   * y may exceed 1.0 on a tall canvas — that is expected and fine.
+   */
+  const strokes = [];          // { color, size, erase, pts: [{x,y,p,t}] }
+  let current   = null;
+  let drawing   = false;
+  let activeId  = null;        // pointerId currently drawing — ignore all others
+
+  let tool  = "brush";
+  let color = "#5865f2";
+  let size  = 6;
+  // Fixed for everyone — a shared rate keeps scoring comparable between
+  // players. Lives in RULES so the bot and the app can never disagree.
+  const REPLAY_TARGET_SEC = (window.Game?.RULES?.replayTargetMs ?? 20000) / 1000;
+
+  let t0 = 0;
+
+  /*
+   * Server state. `session` is what /api/session gave us: who we are and the
+   * three words we may choose from. It stays null when the page is opened
+   * without a token, which is the offline/preview case.
+   */
+  let session = null;
+  let posting = false;
+  let posted  = false;
+  let spent   = false;   // the session is gone; no retry can succeed
+
+  // ---------------------------------------------------------------- canvas
+
+  let dpr = 1, cssW = 0, cssH = 0;
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    dpr  = Math.min(window.devicePixelRatio || 1, 3);
+    cssW = Math.max(1, r.width);
+    cssH = Math.max(1, r.height);
+
+    cv.width  = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+    cv.style.width  = cssW + "px";
+    cv.style.height = cssH + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = ctx.lineJoin = "round";
+
+    redraw();
+  }
+
+  // normalised -> css pixels
+  const toX = n => n * cssW;
+  const toY = n => n * cssW;
+
+  function strokeWidthFor(s, pressure) {
+    // pressure 0.5 is the neutral default browsers report for finger/mouse
+    return Math.max(0.4, s.size * (0.45 + pressure * 1.1));
+  }
+
+  /*
+   * Paints points [from, upTo) of a stroke. `from` lets the live drawing path
+   * append only the newest segments each frame instead of redrawing the whole
+   * stroke — otherwise a long stroke degrades to O(n²) and starts to lag.
+   */
+  function paintStroke(s, upTo, from) {
+    const pts = s.pts;
+    const end = (upTo === undefined ? pts.length : upTo);
+    const beg = Math.max(1, from === undefined ? 1 : from);
+    if (end < 1) return;
+
+    ctx.globalCompositeOperation = s.erase ? "destination-out" : "source-over";
+    ctx.strokeStyle = s.color;
+    ctx.fillStyle   = s.color;
+
+    if (end === 1) {
+      const p = pts[0];
+      ctx.beginPath();
+      ctx.arc(toX(p.x), toY(p.y), strokeWidthFor(s, p.p) / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      return;
+    }
+
+    for (let i = beg; i < end; i++) {
+      const a = pts[i - 1], b = pts[i];
+      ctx.beginPath();
+      ctx.lineWidth = strokeWidthFor(s, (a.p + b.p) / 2);
+      ctx.moveTo(toX(a.x), toY(a.y));
+      ctx.lineTo(toX(b.x), toY(b.y));
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, cssW, cssH);
+    for (const s of strokes) paintStroke(s);
+  }
+
+  // ---------------------------------------------------------------- input
+
+  function localPoint(e) {
+    const r = cv.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) / r.width,
+      y: (e.clientY - r.top)  / r.width,
+      p: normPressure(e),
+      t: Math.round(performance.now() - t0)
+    };
+  }
+
+  function normPressure(e) {
+    // Chrome reports 0 for mouse-down-with-no-pressure; treat as neutral.
+    if (e.pointerType === "mouse") return 0.5;
+    if (typeof e.pressure !== "number" || e.pressure === 0) return 0.5;
+    return e.pressure;
+  }
+
+  function onDown(e) {
+    if (drawing) return;                       // single-pointer only
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    drawing  = true;
+    activeId = e.pointerId;
+    cv.setPointerCapture(e.pointerId);
+    if (!t0) t0 = performance.now();
+
+    current = { color, size, erase: tool === "eraser", pts: [] };
+    strokes.push(current);
+
+    addPoint(localPoint(e));
+    $("hint").classList.add("gone");
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!drawing || e.pointerId !== activeId) return;
+
+    // Coalesced events recover the full input rate — this is what makes a
+    // 240 Hz Apple Pencil stroke look smooth instead of polygonal.
+    const batch = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+
+    const from = current.pts.length;
+    for (const ce of batch) addPoint(localPoint(ce));
+    paintStroke(current, current.pts.length, from);
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (!drawing || e.pointerId !== activeId) return;
+    drawing = false;
+    activeId = null;
+
+    if (current && current.pts.length === 0) strokes.pop();
+    current = null;
+
+    redraw();
+    refreshCounts();
+    e.preventDefault();
+  }
+
+  function addPoint(pt) {
+    current.pts.push(pt);
+  }
+
+  cv.addEventListener("pointerdown",   onDown);
+  cv.addEventListener("pointermove",   onMove);
+  cv.addEventListener("pointerup",     onUp);
+  cv.addEventListener("pointercancel", onUp);
+
+  // belt and braces against iOS Safari scroll/zoom hijacking
+  ["gesturestart", "gesturechange", "touchmove"].forEach(t =>
+    stage.addEventListener(t, e => e.preventDefault(), { passive: false }));
+
+  // ---------------------------------------------------------------- report
+
+  function recordingBytes() {
+    return new Blob([serialise()]).size;
+  }
+
+  function serialise() {
+    // Round hard: 4dp of a normalised coord is sub-pixel on a 4K screen,
+    // and it roughly halves the payload.
+    return JSON.stringify({
+      v: 1,
+      strokes: strokes.map(s => ({
+        c: s.color,
+        w: s.size,
+        e: s.erase ? 1 : 0,
+        p: s.pts.map(p => [ +p.x.toFixed(4), +p.y.toFixed(4), +p.p.toFixed(2), p.t ])
+      }))
+    });
+  }
+
+  function refreshCounts() {
+    const has = strokes.length > 0;
+    $("undo").disabled   = !has;
+    $("replay").disabled = !has;
+    $("png").disabled    = !has;
+    $("json").disabled   = !has;
+
+    // Posting needs a word, some ink, and a live session. Offline (no token)
+    // the button stays out of the way entirely — see boot.
+    $("submit").disabled = !has || !currentWord || !session || posting || posted || spent;
+  }
+
+  // ---------------------------------------------------------------- replay
+
+  let replaying = false;
+
+  function replay() {
+    if (replaying || !strokes.length) return;
+    replaying = true;
+    $("replay").disabled = true;
+    say("Replaying drawing.");
+
+    const flat = [];
+    strokes.forEach((s, si) => s.pts.forEach((p, pi) => flat.push({ si, pi, t: p.t })));
+    flat.sort((a, b) => a.t - b.t);
+
+    // Target duration is tunable from the toolbar so the feel can be dialled
+    // in by eye. Never slower than real time — that would look like lag.
+    const span  = Math.max(1, flat[flat.length - 1].t - flat[0].t);
+    const speed = Math.max(1, span / (REPLAY_TARGET_SEC * 1000));
+    const start = performance.now();
+    const base  = flat[0].t;
+    const limits = new Map();     // stroke index -> points revealed so far
+    let idx = 0;
+
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    (function tick() {
+      const elapsed = (performance.now() - start) * speed;
+      let grew = false;
+
+      while (idx < flat.length && (flat[idx].t - base) <= elapsed) {
+        const f = flat[idx];
+        limits.set(f.si, Math.max(limits.get(f.si) || 0, f.pi + 1));
+        idx++;
+        grew = true;
+      }
+
+      if (grew) {
+        ctx.clearRect(0, 0, cssW, cssH);
+        for (const [si, n] of limits) paintStroke(strokes[si], n);
+      }
+
+      if (idx < flat.length) {
+        requestAnimationFrame(tick);
+      } else {
+        redraw();
+        replaying = false;
+        $("replay").disabled = false;
+        say("Replay finished.");
+      }
+    })();
+  }
+
+  // ---------------------------------------------------------------- export
+
+  function exportPNG() {
+    const out = document.createElement("canvas");
+    out.width  = cv.width;
+    out.height = cv.height;
+    const o = out.getContext("2d");
+    o.fillStyle = "#ffffff";
+    o.fillRect(0, 0, out.width, out.height);
+    o.drawImage(cv, 0, 0);
+    out.toBlob(b => download(b, "drawtionary-" + Date.now() + ".png"));
+  }
+
+  function exportJSON() {
+    download(new Blob([serialise()], { type: "application/json" }),
+             "drawtionary-" + Date.now() + ".json");
+  }
+
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    say("Saved " + name);
+  }
+
+  function say(msg) { $("status").textContent = msg; }
+
+  // ---------------------------------------------------------------- palette
+
+  /*
+   * Palette groups. Every group must be a multiple of 4 so the four-row
+   * column flow stays aligned.
+   *
+   * The generated hue sweep runs at 85% saturation, which produces vivid
+   * color but *no* browns — brown is essentially a dark, desaturated
+   * orange and never appears on a saturated ramp. So earth tones and skin
+   * tones are hand-picked rather than generated.
+   */
+  const GROUPS = [
+    { name: "Greyscale", colors: [
+      "#000000", "#2a2a2e", "#4b5563", "#6b7280",
+      "#9ca3af", "#d1d5db", "#f3f4f6", "#ffffff"
+    ]},
+
+    { name: "Earth tones", colors: [
+      // sand / tan
+      "#f0e0c8", "#ddc39c", "#c4a373", "#a3814f",
+      // warm brown
+      "#c99a6b", "#a87345", "#7f5430", "#57391f",
+      // umber / bark
+      "#b8a288", "#8f7a5e", "#665640", "#403526",
+      // rust / terracotta
+      "#e0a072", "#c8703f", "#9c4f28", "#6b3419",
+      // deep chocolate
+      "#4a2e1c", "#382214", "#26170d", "#1a0f08",
+      // olive / moss
+      "#d8d6a8", "#a8a86b", "#767644", "#4a4a28",
+      // clay / mauve
+      "#d9b8ac", "#b5877a", "#8a6055", "#5c3e36",
+      // ochre / mustard
+      "#f0d59a", "#d9b45f", "#b08d3a", "#7d6325"
+    ]},
+
+    { name: "Skin tones", colors: [
+      "#ffe0c8", "#f8cba8", "#eeb389", "#dc9b6d",
+      "#c98a5e", "#b0744a", "#96603c", "#7a4c2e",
+      "#5f3a22", "#4a2c1a", "#35200f", "#231409"
+    ]},
+
+    { name: "Spectrum", generate: true }
+  ];
+
+  const shownGroups = new Set(GROUPS.map(g => g.name));
+
+  function colorsFor(g) {
+    if (!g.generate) return g.colors;
+    const out = [];
+    for (let h = 0; h < 360; h += 20) {
+      [72, 58, 44, 30].forEach(l => out.push(hsl(h, 85, l)));
+    }
+    return out;
+  }
+
+  function buildChips() {
+    const wrap = $("chips");
+    wrap.textContent = "";
+
+    GROUPS.forEach(g => {
+      const cols = colorsFor(g);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.setAttribute("aria-pressed", String(shownGroups.has(g.name)));
+      b.innerHTML =
+        '<span class="dot" style="background:' + cols[Math.floor(cols.length / 2)] + '"></span>' +
+        g.name;
+      b.addEventListener("click", () => {
+        // never let the user hide every group and strand themselves
+        if (shownGroups.has(g.name) && shownGroups.size > 1) shownGroups.delete(g.name);
+        else shownGroups.add(g.name);
+        buildChips();
+        buildPalette();
+        say(g.name + (shownGroups.has(g.name) ? " shown" : " hidden"));
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  function buildPalette() {
+    const wrap = $("palette");
+    wrap.textContent = "";
+    let first = true;
+
+    GROUPS.forEach(g => {
+      if (!shownGroups.has(g.name)) return;
+
+      if (!first) {
+        const sep = document.createElement("span");
+        sep.className = "sep";
+        sep.setAttribute("aria-hidden", "true");
+        wrap.appendChild(sep);
+      }
+      first = false;
+
+      const colors = colorsFor(g);
+      colors.forEach((c, i) => {
+        const b = document.createElement("button");
+        b.className = "sw";
+        b.type = "button";
+        b.style.background = c;
+        b.dataset.hex = c;
+        b.setAttribute("aria-label", g.name + " " + (i + 1) + " of " + colors.length + ", " + c);
+        b.setAttribute("aria-pressed", String(c === color));
+        b.addEventListener("click", () => setColor(c));
+        wrap.appendChild(b);
+      });
+    });
+
+    updatePanButtons();
+  }
+
+  // ---------------------------------------------------------------- panning
+
+  function updatePanButtons() {
+    const el = $("palette");
+    const max = el.scrollWidth - el.clientWidth;
+    $("panLeft").disabled  = el.scrollLeft <= 1;
+    $("panRight").disabled = el.scrollLeft >= max - 1;
+  }
+
+  function pan(dir) {
+    const el = $("palette");
+    el.scrollBy({
+      left: dir * Math.max(120, el.clientWidth * 0.8),
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+    });
+  }
+
+  $("panLeft").addEventListener("click",  () => pan(-1));
+  $("panRight").addEventListener("click", () => pan(1));
+  $("palette").addEventListener("scroll", updatePanButtons, { passive: true });
+
+  function hsl(h, s, l) {
+    // convert to hex so exported data has no color-space surprises
+    const a = s / 100 * Math.min(l / 100, 1 - l / 100);
+    const f = n => {
+      const k = (n + h / 30) % 12;
+      const v = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return Math.round(255 * v).toString(16).padStart(2, "0");
+    };
+    return "#" + f(0) + f(8) + f(4);
+  }
+
+  function setColor(c) {
+    color = c.toLowerCase();
+    tool = "brush";
+    syncTools();
+    document.querySelectorAll(".sw").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.hex === color)));
+    $("currentDot").style.background = color;
+    say("Color " + color + " selected.");
+  }
+
+  function syncTools() {
+    $("brush").setAttribute("aria-pressed",  String(tool === "brush"));
+    $("eraser").setAttribute("aria-pressed", String(tool === "eraser"));
+  }
+
+  // ---------------------------------------------------------------- wire up
+
+  $("brush").addEventListener("click",  () => { tool = "brush";  syncTools(); });
+  $("eraser").addEventListener("click", () => { tool = "eraser"; syncTools(); });
+
+  $("undo").addEventListener("click", () => {
+    strokes.pop();
+    redraw();
+    refreshCounts();
+    say("Undid last stroke.");
+  });
+
+  // ---------------------------------------------------------------- menu
+
+  function openMenu() {
+    $("moreMenu").hidden = false;
+    $("moreBtn").setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outsideClose, true);
+    document.addEventListener("keydown", escClose, true);
+  }
+
+  function closeMenu() {
+    $("moreMenu").hidden = true;
+    $("moreBtn").setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outsideClose, true);
+    document.removeEventListener("keydown", escClose, true);
+  }
+
+  function outsideClose(e) {
+    if (!e.target.closest(".menuwrap")) closeMenu();
+  }
+
+  function escClose(e) {
+    if (e.key === "Escape") { closeMenu(); $("moreBtn").focus(); }
+  }
+
+  $("moreBtn").addEventListener("click", () => {
+    $("moreMenu").hidden ? openMenu() : closeMenu();
+  });
+
+  // ---------------------------------------------------------------- palette toggle
+
+  $("togglePalette").addEventListener("click", () => {
+    const btn = $("togglePalette");
+    const open = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!open));
+    $("palettePanel").hidden = open;
+    resize();                       // canvas reclaims the freed space
+    if (!open) updatePanButtons();
+    say(open ? "Colors hidden." : "Colors shown.");
+  });
+
+  $("replay").addEventListener("click", replay);
+  $("png").addEventListener("click", exportPNG);
+  $("json").addEventListener("click", exportJSON);
+
+  $("size").addEventListener("input", e => {
+    size = +e.target.value;
+    $("sizeOut").textContent = size;
+  });
+
+  // ---------------------------------------------------------------- cards
+
+  /*
+   * Choosing a word is the first step, not a menu item. The modal opens on
+   * load; once a word is picked the bottom bar just states it, and changing
+   * your mind means going through More > Start over — which is deliberate,
+   * because it throws the drawing away.
+   */
+  let currentWord = null;
+  let lastFocus = null;
+
+  /*
+   * The card is dealt by the server and arrives with the session — the client
+   * never picks its own words. If it did, nothing would stop someone editing
+   * the request to claim a hard word's 35 points for drawing a cat.
+   *
+   * Which also means there is no "new card" button any more: a re-deal would
+   * have to be a server round trip, and letting someone reroll until they get
+   * three easy words is a scoring hole. You get the three you were dealt.
+   */
+  function renderCard() {
+    const out = $("cardOut");
+    out.innerHTML = "";
+
+    if (!session) {
+      out.innerHTML =
+        '<p class="ctx">No drawing session. Run <b>/draw</b> in Discord to get a link.</p>';
+      return;
+    }
+
+    for (const choice of session.card) {
+      const { word, tier, points } = choice;
+
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "choice";
+
+      const name = document.createElement("span");
+      name.textContent = word;
+
+      const badge = document.createElement("span");
+      badge.className = "tier " + tier;
+      badge.textContent = tier + " · " + points;
+
+      b.append(name, badge);
+      b.setAttribute("aria-label", word + ", " + tier + ", " + points + " points");
+      b.addEventListener("click", () => chooseWord(word, tier, points));
+      out.appendChild(b);
+    }
+  }
+
+  function openCard({ cancellable = false } = {}) {
+    lastFocus = document.activeElement;
+    closeMenu();
+
+    $("cardWarn").hidden = strokes.length === 0;
+    $("cancelCard").hidden = !cancellable;
+    $("cardModal").hidden = false;
+
+    renderCard();
+    const first = $("cardOut").querySelector("button");
+    if (first) first.focus();
+
+    document.addEventListener("keydown", cardKeys, true);
+  }
+
+  function closeCard() {
+    $("cardModal").hidden = true;
+    document.removeEventListener("keydown", cardKeys, true);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  function cardKeys(e) {
+    if (e.key === "Escape" && !$("cancelCard").hidden) {
+      e.preventDefault();
+      closeCard();
+      return;
+    }
+    if (e.key !== "Tab") return;
+
+    // keep focus inside the dialog
+    const f = [...$("cardModal").querySelectorAll("button:not([hidden])")];
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    e.preventDefault();
+    f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+  }
+
+  function chooseWord(word, tier, points) {
+    // a new word means a new drawing
+    strokes.length = 0;
+    t0 = 0;
+    redraw();
+    refreshCounts();
+    $("hint").classList.remove("gone");
+
+    currentWord = { word, tier, points };
+    $("wordName").textContent = word;
+    $("wordPts").textContent = "· " + tier + " · " + points + " pts";
+    $("wordBar").hidden = false;
+
+    closeCard();
+    resize();
+    say("Drawing " + word + ". " + tier + ", " + points + " points.");
+  }
+
+  $("cancelCard").addEventListener("click", closeCard);
+
+  $("startOver").addEventListener("click", () => openCard({ cancellable: true }));
+
+  $("custom").addEventListener("input", e => setColor(e.target.value));
+
+  window.addEventListener("resize", resize);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
+
+  // ---------------------------------------------------------------- notices
+
+  /*
+   * Notices are announced, not focused. Yanking focus out of the canvas
+   * mid-drawing to shout at someone is hostile, and role="alert" already
+   * gets it read out. Anything that ends the session sets `sticky` so it
+   * cannot be dismissed by carrying on.
+   */
+  let noticeTimer = 0;
+
+  function notice(text, kind = "warn", { sticky = false } = {}) {
+    const el = $("notice");
+    el.textContent = text;
+    el.className = kind;
+    el.hidden = false;
+
+    clearTimeout(noticeTimer);
+    if (!sticky) noticeTimer = setTimeout(() => { el.hidden = true; }, 6000);
+  }
+
+  function clearNotice() {
+    clearTimeout(noticeTimer);
+    $("notice").hidden = true;
+  }
+
+  // ---------------------------------------------------------------- session
+
+  const token = new URLSearchParams(location.search).get("t");
+
+  /** Locks the canvas once the drawing has been posted — it is out of our hands. */
+  function lockDown(msg) {
+    posted = true;
+    notice(msg, "good", { sticky: true });
+    $("submit").disabled = true;
+    $("submit").textContent = "Posted";
+    $("startOver").disabled = true;
+    cv.style.pointerEvents = "none";
+    say(msg);
+  }
+
+  async function loadSession() {
+    if (!token) {
+      // Opened without a link — a preview, not a round. Everything still
+      // draws; there is just nowhere to post it.
+      $("submit").hidden = true;
+      $("ctx").textContent = "preview — no drawing session";
+      notice(
+        "You're in preview mode. Run /draw in Discord to get a link you can post from.",
+        "warn",
+        { sticky: true }
+      );
+      return;
+    }
+
+    try {
+      const res  = await fetch("/api/session?t=" + encodeURIComponent(token));
+      const body = await res.json();
+
+      if (!res.ok) {
+        $("submit").hidden = true;
+        notice(body.error ?? "That link didn't work. Run /draw again.", "bad", { sticky: true });
+        return;
+      }
+
+      session = body;
+    } catch {
+      $("submit").hidden = true;
+      notice("Couldn't reach the server. Check your connection and reload.", "bad", { sticky: true });
+    }
+  }
+
+  /*
+   * The session expires whether or not you are still drawing, and finding
+   * that out at submit time — after an hour on a hard word — would be
+   * miserable. So the header counts down, and warns before it matters.
+   *
+   * Deliberately coarse: a ticking second-by-second timer next to a drawing
+   * canvas is a stress machine, and the point of this game is that there is
+   * no clock.
+   */
+  function startExpiryClock() {
+    if (!session?.expiresAt) return;
+    let warned = false;
+
+    const tick = () => {
+      if (posted) return;
+      const left = session.expiresAt - Date.now();
+
+      if (left <= 0) {
+        $("ctx").textContent = "link expired";
+        notice("This link has expired. Save your drawing data, then run /draw again.",
+               "bad", { sticky: true });
+        $("submit").disabled = true;
+        clearInterval(timer);
+        return;
+      }
+
+      const mins = Math.ceil(left / 60000);
+      $("ctx").textContent = mins + (mins === 1 ? " min left" : " mins left");
+
+      if (!warned && left <= 5 * 60000) {
+        warned = true;
+        notice("Five minutes left on this link. Post it soon, or save your drawing data.", "warn");
+      }
+    };
+
+    const timer = setInterval(tick, 15000);
+    tick();
+  }
+
+  // ---------------------------------------------------------------- submit
+
+  async function submit() {
+    if (posting || posted || !currentWord || !session || !strokes.length) return;
+
+    posting = true;
+    refreshCounts();
+    $("submit").textContent = "Posting…";
+    say("Posting your drawing.");
+
+    // Elapsed drawing time, not wall-clock since load — someone who opened
+    // the tab and made tea has not been drawing for an hour.
+    const durationMs = strokes.reduce(
+      (max, s) => Math.max(max, s.pts.length ? s.pts[s.pts.length - 1].t : 0), 0);
+
+    try {
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          token,
+          word: currentWord.word,
+          strokes: JSON.parse(serialise()).strokes,
+          durationMs,
+          width: Math.round(cssW),
+          height: Math.round(cssH)
+        })
+      });
+
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // 404 and 409 mean the session is spent. Offering a retry that can
+        // only fail again is worse than saying so plainly.
+        if (res.status === 404 || res.status === 409) {
+          spent = true;
+          notice(body.error ?? "That didn't go through.", "bad", { sticky: true });
+          return;
+        }
+        notice(body.error ?? "That didn't go through.", "bad");
+        return;
+      }
+
+      lockDown(body.posted
+        ? "Posted. Go and watch people struggle with it."
+        : "Saved — but I couldn't post it to the channel. Someone should check on the bot.");
+    } catch {
+      notice("Couldn't reach the server. Your drawing is still here — try again.", "bad");
+    } finally {
+      posting = false;
+
+      if (spent) {
+        $("submit").disabled = true;
+        $("submit").textContent = "Can't post";
+      } else if (!posted) {
+        $("submit").textContent = "Post it";
+        refreshCounts();
+      }
+    }
+  }
+
+  $("submit").addEventListener("click", submit);
+
+  /*
+   * Posting is irreversible and the button sits next to Undo, so it does not
+   * get a keyboard shortcut. Deliberate, not an oversight.
+   */
+
+  // ---------------------------------------------------------------- boot
+
+  const framed = window.self !== window.top;
+
+  buildChips();
+  buildPalette();
+  setColor(color);
+  syncTools();
+
+  // On a phone the palette eats a third of the screen, so it starts collapsed
+  // and the canvas gets the space. Desktop keeps it open.
+  if (matchMedia("(max-width: 640px)").matches) {
+    $("togglePalette").setAttribute("aria-expanded", "false");
+    $("palettePanel").hidden = true;
+  }
+
+  resize();
+  refreshCounts();
+
+  // The card can't be drawn until we know what we were dealt, so the modal
+  // waits on the network rather than flashing an empty state first.
+  loadSession().then(() => {
+    refreshCounts();
+
+    if (!session) {
+      // Nothing to choose from. Opening a modal with no options and no way
+      // out would be a focus trap, so we leave the canvas free and let the
+      // sticky notice explain itself.
+      $("hint").classList.remove("gone");
+      return;
+    }
+
+    startExpiryClock();
+    openCard();
+  });
+})();
+</script>
+</body>
+</html>

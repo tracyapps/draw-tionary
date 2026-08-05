@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Draw-tionary — replay</title>
+<style>
+  :root {
+    --bg:      #1e1f22;
+    --panel:   #2b2d31;
+    --panel-2: #313338;
+    --line:    #3f4147;
+    --ink:     #dbdee1;
+    --ink-dim: #949ba4;
+    --accent:  #5865f2;
+    --good:    #23a55a;
+    --warn:    #f0b232;
+    --bad:     #f23f43;
+    --radius:  8px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+    padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1 { margin: 0; font-size: 14px; font-weight: 600; }
+
+  .ctx { font-size: 11px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .spacer { margin-left: auto; }
+
+  #stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+  }
+
+  /*
+   * The canvas keeps the aspect ratio it was drawn at. Letterboxing is the
+   * honest option — stretching a drawing to fill the window would distort
+   * whatever the person actually drew.
+   */
+  #board {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    background: #fff;
+    border-radius: var(--radius);
+    box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  }
+
+  #msg {
+    max-width: 380px;
+    padding: 16px 18px;
+    text-align: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--ink-dim);
+  }
+  #msg[hidden] { display: none; }
+
+  /* ---------- word shape ---------- */
+
+  .bar {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+
+  /*
+   * The shape of the word, shown the same way the guessing modal shows it:
+   * one box per letter, punctuation already filled in so nobody loses on a
+   * missing hyphen.
+   */
+  #shape {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 4px;
+    font: 600 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  #shape .box {
+    width: 20px;
+    height: 26px;
+    border-bottom: 2px solid var(--ink-dim);
+  }
+  #shape .box.filled {
+    display: grid;
+    place-items: center;
+    color: #fff;
+    border-bottom-color: var(--good);
+  }
+  #shape .fixed {
+    display: grid;
+    place-items: end center;
+    height: 26px;
+    min-width: 8px;
+    color: var(--ink-dim);
+  }
+  /* A word break is a gap, not a character */
+  #shape .gap { width: 14px; height: 26px; }
+
+  .tier {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+  .tier.easy   { color: #7ee2a8; border-color: #2c5c41; }
+  .tier.medium { color: #ffd479; border-color: #6b5527; }
+  .tier.hard   { color: #ff9d9f; border-color: #6e3436; }
+
+  button {
+    appearance: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #3a3d44; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #4752c4; }
+
+  :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  .spacer-bar { margin-left: auto; }
+
+  /* ---------- your result ---------- */
+
+  /*
+   * Shown to someone opening a drawing they already played. The point is that
+   * coming back feels like the game remembers you — an empty row of letter
+   * boxes and no score reads as having been forgotten.
+   */
+  #you {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    flex: none;
+    padding: 12px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--line);
+  }
+  #you[hidden] { display: none; }
+
+  #youText { font-size: 14px; }
+  #youText b { color: #fff; }
+
+  #youScore {
+    font: 600 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #7ee2a8;
+    padding: 5px 9px;
+    border: 1px solid #2c5c41;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  /*
+   * The next action, and the reason this panel exists. People click whatever
+   * gets them back into the game — so whatever they clicked should end
+   * somewhere with an obvious thing to do next.
+   */
+  #yourTurn {
+    margin-left: auto;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 11px 18px;
+  }
+
+  #ctaNote {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+  #ctaNote[hidden] { display: none; }
+
+  @media (max-width: 640px) {
+    /* On a phone the CTA gets its own full-width row rather than being
+       squeezed next to the text it is meant to follow. */
+    #yourTurn { margin-left: 0; width: 100%; }
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  @media (max-width: 640px) {
+    #shape .box { width: 17px; }
+    .bar { gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Draw-tionary</h1>
+  <span class="ctx" id="ctx"></span>
+  <span class="spacer"></span>
+</header>
+
+<div id="stage">
+  <canvas id="board" hidden></canvas>
+  <p id="msg">Loading the drawing…</p>
+</div>
+
+<div class="bar" id="bar" hidden>
+  <div id="shape" role="img" aria-label="Word shape"></div>
+  <span class="tier" id="tier"></span>
+  <span class="ctx" id="solvers"></span>
+
+  <span class="spacer-bar"></span>
+
+  <button id="play" class="primary">Watch it draw</button>
+  <button id="still">Show the finished drawing</button>
+</div>
+
+<div id="you" hidden>
+  <span id="youText"></span>
+  <span id="youScore" hidden></span>
+  <button id="yourTurn" class="primary" hidden>Your turn — draw one</button>
+  <p id="ctaNote" hidden></p>
+</div>
+
+<p class="sr-only" id="status" role="status"></p>
+
+<!-- Absolute, because this page is served at /watch/:id, not from /app. -->
+<script src="/app/bundle.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const say = msg => { $("status").textContent = msg; };
+
+  const cv  = $("board");
+  const ctx = cv.getContext("2d");
+
+  let view    = null;   // whatever /api/watch gave us
+  let strokes = [];     // decoded from the compact wire format
+  let cssW = 0, cssH = 0, dpr = 1;
+
+  // ---------------------------------------------------------------- layout
+
+  /*
+   * Strokes are stored normalised against WIDTH on both axes, so the replay
+   * only needs to know how wide the canvas is. Height comes from the recorded
+   * aspect ratio, which is why a phone drawing does not get squashed here.
+   */
+  function fit() {
+    if (!view?.drawing) return;
+
+    const stage = $("stage").getBoundingClientRect();
+    const pad   = 24;
+    const ratio = (view.drawing.height || 3) / (view.drawing.width || 4);
+
+    const availW = Math.max(160, stage.width  - pad);
+    const availH = Math.max(160, stage.height - pad);
+
+    cssW = Math.min(availW, availH / ratio);
+    cssH = cssW * ratio;
+
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    cv.width  = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+    cv.style.width  = cssW + "px";
+    cv.style.height = cssH + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = ctx.lineJoin = "round";
+  }
+
+  const toX = n => n * cssW;
+  const toY = n => n * cssW;
+
+  const widthFor = (s, pressure) => Math.max(0.4, s.size * (0.45 + pressure * 1.1));
+
+  function paintStroke(s, upTo) {
+    const pts = s.pts;
+    const end = upTo === undefined ? pts.length : upTo;
+    if (end < 1) return;
+
+    ctx.globalCompositeOperation = s.erase ? "destination-out" : "source-over";
+    ctx.strokeStyle = s.color;
+    ctx.fillStyle   = s.color;
+
+    if (end === 1) {
+      const p = pts[0];
+      ctx.beginPath();
+      ctx.arc(toX(p.x), toY(p.y), widthFor(s, p.p) / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      return;
+    }
+
+    for (let i = 1; i < end; i++) {
+      const a = pts[i - 1], b = pts[i];
+      ctx.beginPath();
+      ctx.lineWidth = widthFor(s, (a.p + b.p) / 2);
+      ctx.moveTo(toX(a.x), toY(a.y));
+      ctx.lineTo(toX(b.x), toY(b.y));
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function clear() { ctx.clearRect(0, 0, cssW, cssH); }
+
+  function showStill() {
+    stop();
+    clear();
+    for (const s of strokes) paintStroke(s);
+  }
+
+  // ---------------------------------------------------------------- replay
+
+  let raf = 0;
+
+  function stop() {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    $("play").disabled = false;
+    $("play").textContent = "Watch it draw";
+  }
+
+  function replay() {
+    if (raf) return;
+
+    /*
+     * Everyone watches at the same rate, whatever the recording took. A fast
+     * doodle and a slow careful drawing get the same window, so the early
+     * bonus is not a lottery on how long the drawer dithered.
+     */
+    const recorded = view.drawing.durationMs || 0;
+    const plan = window.Game?.replayPlan
+      ? window.Game.replayPlan(recorded)
+      : { durationMs: 20000, speed: Math.max(1, recorded / 20000) };
+
+    // One flat, time-ordered list of points; strokes can interleave in theory
+    // and sorting costs nothing at these sizes.
+    const flat = [];
+    strokes.forEach((s, si) => s.pts.forEach((p, pi) => flat.push({ si, pi, t: p.t })));
+    flat.sort((a, b) => a.t - b.t);
+
+    if (!flat.length) { showStill(); return; }
+
+    const span  = Math.max(1, flat[flat.length - 1].t - flat[0].t);
+    const start = performance.now();
+    const t0    = flat[0].t;
+
+    $("play").disabled = true;
+    $("play").textContent = "Playing…";
+    say("Replaying the drawing.");
+    clear();
+
+    // How many points of each stroke have been painted so far.
+    const upTo = new Array(strokes.length).fill(0);
+    let i = 0;
+
+    const frame = now => {
+      const progress = Math.min(1, (now - start) / plan.durationMs);
+      const until    = t0 + progress * span;
+
+      while (i < flat.length && flat[i].t <= until) {
+        upTo[flat[i].si] = flat[i].pi + 1;
+        i++;
+      }
+
+      clear();
+      for (let s = 0; s < strokes.length; s++) {
+        if (upTo[s]) paintStroke(strokes[s], upTo[s]);
+      }
+
+      if (progress < 1) { raf = requestAnimationFrame(frame); return; }
+
+      showStill();
+      say("Replay finished.");
+    };
+
+    raf = requestAnimationFrame(frame);
+  }
+
+  // Motion is a nicety, not the content — respect the setting and go straight
+  // to the finished drawing.
+  const stillPreferred = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------------------------------------------------------------- word shape
+
+  function renderShape(mask) {
+    const out = $("shape");
+    out.innerHTML = "";
+
+    for (const seg of mask) {
+      const el = document.createElement("span");
+
+      if (seg.type === "letter") {
+        el.className = "box";
+      } else if (seg.char === " ") {
+        el.className = "gap";
+      } else {
+        el.className = "fixed";
+        el.textContent = seg.char;
+      }
+      out.appendChild(el);
+    }
+
+    // Screen readers get the sentence, not 12 empty boxes.
+    out.setAttribute("aria-label",
+      window.Game?.describeMask ? window.Game.describeMask(mask) : "Word shape");
+  }
+
+  /** Once the answer is known — the drawer, a solver, or a finished round. */
+  function revealWord(word) {
+    const out = $("shape");
+    out.innerHTML = "";
+
+    for (const ch of word) {
+      const el = document.createElement("span");
+      if (ch === " ") {
+        el.className = "gap";
+      } else {
+        el.className = "box filled";
+        el.textContent = ch;
+      }
+      out.appendChild(el);
+    }
+    out.setAttribute("aria-label", "The word was " + word);
+  }
+
+  // ---------------------------------------------------------------- you
+
+  /*
+   * There is no token in here on purpose.
+   *
+   * Identity rides on an httpOnly cookie the server set when this page was
+   * first opened from Discord. Script cannot read it, so there is nothing on
+   * this page to copy into a message — which was the whole problem with
+   * carrying it in the query string.
+   *
+   * `credentials: "same-origin"` is fetch's default, so the cookie goes along
+   * automatically. Whether the server recognises it is answered by
+   * `canStartDrawing` in the payload.
+   */
+
+  /*
+   * Everything below is about the second visit.
+   *
+   * People click whatever button gets them back into the game, often with no
+   * particular goal — so wherever they land needs to say what happened last
+   * time and offer one obvious thing to do next. Landing on a replay of a
+   * word you already guessed, with no score and no way forward, is a dead end
+   * dressed up as a feature.
+   */
+  function renderYou(you) {
+    if (!you) return;
+
+    const text  = $("youText");
+    const score = $("youScore");
+
+    if (you.isDrawer) {
+      text.innerHTML = view.solverCount
+        ? `You drew this one. <b>${view.solverCount}</b> ` +
+          (view.solverCount === 1 ? "person has" : "people have") + " got it."
+        : "You drew this one. Nobody has cracked it yet.";
+    } else if (you.solved) {
+      const place = you.solverIndex === 0
+        ? "You got it first."
+        : `You got it — ${ordinal(you.solverIndex + 1)} to crack it.`;
+
+      // Wrong guesses cost nothing, so they're worth celebrating rather than
+      // hiding. Someone who took six goes did more work, not less.
+      text.innerHTML = you.attempts > 1
+        ? `${place} Took you <b>${you.attempts}</b> goes.`
+        : place;
+    } else if (you.attempts > 0) {
+      text.innerHTML =
+        `<b>${you.attempts}</b> ${you.attempts === 1 ? "go" : "goes"} so far, ` +
+        "and still a mystery. Wrong guesses cost nothing — have another.";
+    } else {
+      text.textContent = "";
+    }
+
+    if (you.awarded > 0) {
+      score.textContent = "+" + you.awarded + " pts";
+      score.hidden = false;
+    }
+
+    $("you").hidden = !text.textContent && !you.awarded;
+  }
+
+  /** Works even when the round couldn't be loaded, so the CTA still functions. */
+  const roundIdFromPath = () => location.pathname.split("/").filter(Boolean).pop();
+
+  const ordinal = n => {
+    const teen = n % 100 >= 11 && n % 100 <= 13;
+    return n + (teen ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th");
+  };
+
+  /*
+   * The CTA can only be offered to someone we can identify, because starting
+   * a round means dealing a card to a Discord user in a Discord channel. A
+   * stranger who was sent this link gets told where the game lives instead —
+   * still a next step, just not a button.
+   */
+  function renderCta(canStart) {
+    if (canStart) {
+      $("yourTurn").hidden = false;
+      $("you").hidden = false;
+      return;
+    }
+    $("ctaNote").textContent = "Want a go? Run /draw in the channel this came from.";
+    $("ctaNote").hidden = false;
+    $("you").hidden = false;
+  }
+
+  async function startDrawing() {
+    const btn = $("yourTurn");
+    btn.disabled = true;
+    btn.textContent = "Dealing you a word…";
+    say("Getting you a canvas.");
+
+    try {
+      // The round id says where the drawing should land — the server takes
+      // the channel off the round, not off anything the browser claims.
+      const res  = await fetch("/api/draw-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roundId: view?.id ?? roundIdFromPath() })
+      });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        btn.hidden = true;
+        $("ctaNote").textContent =
+          body.error ?? "Couldn't start a drawing. Run /draw in Discord instead.";
+        $("ctaNote").hidden = false;
+        say($("ctaNote").textContent);
+        return;
+      }
+
+      /*
+       * Recorded before navigating. On a slow connection the tab sits here
+       * for a moment, and it gives the smoke test something to assert on —
+       * jsdom cannot navigate, so checking `location` would only prove the
+       * test harness works.
+       */
+      btn.dataset.href = body.url;
+      btn.textContent = "Opening your canvas…";
+
+      location.href = body.url;
+    } catch {
+      btn.disabled = false;
+      btn.textContent = "Your turn — draw one";
+      $("ctaNote").textContent = "Couldn't reach the server. Try that again?";
+      $("ctaNote").hidden = false;
+    }
+  }
+
+  $("yourTurn").addEventListener("click", startDrawing);
+
+  // ---------------------------------------------------------------- load
+
+  /*
+   * A dead end still gets a way forward. Someone who clicked through to a
+   * removed drawing has shown up wanting to play — sending them to a bare
+   * error message wastes that.
+   */
+  function fail(text, canStartDrawing = false) {
+    $("msg").hidden = false;
+    $("msg").textContent = text;
+    cv.hidden = true;
+    $("bar").hidden = true;
+    renderCta(canStartDrawing);
+    say(text);
+  }
+
+  function decode(drawing) {
+    // Wire format is the compact one the canvas sends: {c,w,e,p:[[x,y,p,t]]}
+    return (drawing.strokes ?? []).map(s => ({
+      color: s.c,
+      size:  s.w,
+      erase: !!s.e,
+      pts:   (s.p ?? []).map(([x, y, p, t]) => ({ x, y, p, t }))
+    }));
+  }
+
+  async function load() {
+    const id = location.pathname.split("/").filter(Boolean).pop();
+
+    let res, body;
+    try {
+      res  = await fetch("/api/watch/" + encodeURIComponent(id));
+      body = await res.json();
+    } catch {
+      fail("Couldn't reach the server. Try reloading.");
+      return;
+    }
+
+    if (!res.ok) {
+      // A dead round is still someone who turned up wanting to play, so if
+      // the server recognises them they still get offered a canvas.
+      fail("That drawing isn't around any more.", !!body.canStartDrawing);
+      return;
+    }
+
+    view = body;
+
+    if (!view.drawing) {
+      // Hidden or removed rounds ship no strokes, by design.
+      fail(view.status === "hidden"
+        ? "This drawing is hidden while a moderator takes a look."
+        : "This drawing has been removed.", !!view.canStartDrawing);
+      return;
+    }
+
+    strokes = decode(view.drawing);
+
+    $("msg").hidden = true;
+    cv.hidden = false;
+    $("bar").hidden = false;
+
+    $("tier").textContent = view.tier + " · " + view.points + " pts";
+    $("tier").className = "tier " + view.tier;
+
+    $("solvers").textContent = view.solverCount
+      ? view.solverCount + (view.solverCount === 1 ? " person has got it" : " people have got it")
+      : "nobody has got it yet";
+
+    // publicView only includes `word` for people who have earned it, so this
+    // is the whole of the answer-hiding logic on the client: trust the server.
+    if (view.word) revealWord(view.word);
+    else renderShape(view.mask);
+
+    renderYou(view.you);
+    renderCta(view.canStartDrawing);
+
+    fit();
+    if (stillPreferred) showStill();
+    else replay();
+  }
+
+  $("play").addEventListener("click", replay);
+  $("still").addEventListener("click", () => {
+    showStill();
+    say("Showing the finished drawing.");
+  });
+
+  window.addEventListener("resize", () => {
+    const wasPlaying = !!raf;
+    stop();
+    fit();
+    if (wasPlaying) replay(); else showStill();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

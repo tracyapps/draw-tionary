@@ -1,0 +1,16 @@
+node_modules/
+*.db
+.env
+.DS_Store
+
+# Generated — `npm run build` and `npm run art` recreate these
+spike/bundle.js
+app/bundle.js
+art/templates/
+
+# Source art.
+art/*.design
+art/*.afdesign
+art/*.png
+art/*.svg
+art/*.jpg

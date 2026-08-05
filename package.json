@@ -1,0 +1,20 @@
+{
+  "name": "draw-tionary",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"lib/*.test.js\"",
+    "build": "node tools/build-spike.js",
+    "smoke": "node tools/smoke.js",
+    "check": "npm run build && npm test && npm run smoke && npm run schema && npm run e2e",
+    "art": "node tools/build-art-templates.js",
+    "schema": "node --experimental-sqlite --no-warnings tools/schema-check.js",
+    "e2e": "node --experimental-sqlite --no-warnings tools/e2e.js",
+    "start": "node --experimental-sqlite bot/server.js",
+    "register": "node bot/register-commands.js"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}

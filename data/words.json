@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "notes": [
+    "Curated for asynchronous play: every word must be guessable from a silent",
+    "replay with no gestures, no talking, and no back-and-forth. Abstract nouns",
+    "(feeling, freedom, patience), verbs needing mime, and proper nouns are all",
+    "excluded on purpose.",
+    "",
+    "easy   = one object, readable silhouette, a child could draw it",
+    "medium = one object needing detail or context to be unambiguous",
+    "hard   = a scene or composite idea; you have to compose something",
+    "",
+    "A dealt card offers one word from each tier. Higher tier, more points."
+  ],
+
+  "tiers": {
+    "easy": {
+      "points": 10,
+      "words": [
+        "apple", "banana", "carrot", "cherry", "corn", "egg", "grapes", "lemon",
+        "mushroom", "pumpkin", "strawberry", "watermelon", "cake", "cookie",
+        "donut", "pizza", "sandwich", "ice cream", "popcorn", "teapot",
+
+        "cat", "dog", "bird", "fish", "frog", "bee", "butterfly", "snail",
+        "spider", "turtle", "snake", "owl", "duck", "rabbit", "mouse", "horse",
+        "cow", "pig", "sheep", "bear", "lion", "elephant", "giraffe", "penguin",
+        "whale", "shark", "octopus", "crab", "starfish", "dolphin",
+
+        "sun", "moon", "star", "cloud", "rain", "tree", "leaf", "flower",
+        "cactus", "mountain", "river", "island", "cave",
+
+        "house", "door", "window", "fence", "gate", "ladder", "bridge", "road",
+        "tent", "barn", "well", "chair", "table", "bed", "lamp", "candle",
+        "mirror", "clock",
+
+        "car", "bus", "train", "boat", "bike", "truck", "rocket", "plane",
+        "anchor", "wheel", "kite", "balloon", "umbrella",
+
+        "book", "pencil", "scissors", "hammer", "key", "ball", "bell", "crown",
+        "ring", "glasses", "hat", "shoe", "sock", "shirt", "cup", "spoon",
+        "fork", "plate", "bowl", "bottle", "box", "bag", "brush", "comb",
+        "guitar", "drum", "sword", "shield", "arrow", "feather", "snowman"
+      ]
+    },
+
+    "medium": {
+      "points": 20,
+      "words": [
+        "lighthouse", "windmill", "telescope", "hourglass", "treasure chest",
+        "campfire", "hot air balloon", "ferris wheel", "scarecrow", "igloo",
+        "pyramid", "drawbridge", "throne", "chandelier", "fireplace",
+        "staircase", "elevator", "escalator", "mailbox", "birdhouse", "beehive",
+        "spider web", "hammock", "bunk bed", "rocking chair", "treadmill",
+
+        "submarine", "helicopter", "tractor", "ambulance", "fire truck",
+        "school bus", "motorcycle", "sailboat", "skateboard", "surfboard",
+        "roller skate", "wheelchair", "shopping cart", "stroller",
+
+        "waterfall", "volcano", "iceberg", "canyon", "glacier", "tornado",
+        "lightning", "rainbow", "eclipse", "meteor", "satellite", "astronaut",
+        "space station", "desert", "jungle", "swamp",
+
+        "piano", "violin", "trumpet", "accordion", "harp", "banjo",
+        "xylophone", "tambourine", "microphone", "megaphone",
+
+        "microscope", "thermometer", "compass", "sundial", "weather vane",
+        "typewriter", "record player", "jukebox", "vending machine",
+        "kaleidoscope", "lantern", "wind chime", "sprinkler", "trophy",
+        "medal", "dartboard", "bowling pin", "jack-in-the-box", "puppet",
+        "piggy bank", "birdcage", "fishbowl", "toolbox", "wheelbarrow",
+        "watering can", "picket fence", "porch swing", "mailbag", "suitcase",
+        "backpack", "lunchbox", "thermos", "binoculars", "stopwatch"
+      ]
+    },
+
+    "hard": {
+      "points": 35,
+      "words": [
+        "traffic jam", "rush hour", "power outage", "flat tire", "burnt toast",
+        "tangled headphones", "overflowing bathtub", "spilled groceries",
+        "leaky faucet", "stuck zipper", "melting ice cream", "spring cleaning",
+        "moving day", "garage sale", "lemonade stand", "laundry day",
+
+        "birthday party", "wedding", "graduation", "picnic", "parade",
+        "carnival", "circus", "orchestra", "campfire stories", "snowball fight",
+        "food fight", "tug of war", "obstacle course", "marathon",
+        "breakfast in bed", "first day of school",
+
+        "camping trip", "road trip", "sandcastle", "treehouse",
+        "farmers market", "construction site", "train station", "airport",
+        "harbor", "playground", "skate park", "ice rink", "ski slope",
+        "hot spring", "greenhouse", "observatory", "aquarium", "library",
+        "bakery", "barbershop", "laundromat", "art studio", "science lab",
+
+        "haunted house", "spooky forest", "underwater city", "space colony",
+        "dinosaur skeleton", "archaeological dig", "treasure map",
+        "northern lights", "solar system", "thunderstorm", "blizzard",
+        "message in a bottle", "wild goose chase", "needle in a haystack",
+        "raining cats and dogs"
+      ]
+    }
+  }
+}

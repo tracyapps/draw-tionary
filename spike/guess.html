@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Draw-tionary — guessing</title>
+<style>
+  :root {
+    --bg:      #1e1f22;
+    --panel:   #2b2d31;
+    --panel-2: #313338;
+    --line:    #3f4147;
+    --ink:     #dbdee1;
+    --dim:     #949ba4;
+    --accent:  #5865f2;
+    --good:    #23a55a;
+    --warn:    #f0b232;
+    --bad:     #f23f43;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 24px 20px max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; }
+
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: var(--dim); font-size: 13px; margin: 0 0 20px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--dim);
+    margin-bottom: 14px;
+  }
+
+  .pill {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .pill.easy   { color: #7ee2a8; border-color: #2c5c41; }
+  .pill.medium { color: #ffd479; border-color: #6b5527; }
+  .pill.hard   { color: #ff9d9f; border-color: #6e3436; }
+
+  /* ---------- replay progress ---------- */
+
+  .track {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--good), var(--warn));
+    transition: width .08s linear;
+  }
+  .track.done .fill { background: var(--line); }
+
+  .bonusline {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 16px;
+  }
+  #bonusNow { color: var(--good); font-weight: 600; }
+  .track.done + .bonusline #bonusNow { color: var(--dim); font-weight: 400; }
+
+  /* ---------- letter boxes ---------- */
+
+  /*
+   * One real <input> sits invisibly on top of the whole row. The boxes are
+   * pure decoration (aria-hidden) that mirror its value.
+   *
+   * This is deliberate: a row of separate <input> elements is the classic
+   * broken pattern — it wrecks tab order, fights password managers, breaks
+   * paste, and makes screen readers announce a dozen unlabelled fields.
+   * One input keeps the mobile keyboard, caret, paste, undo, and assistive
+   * tech all behaving normally.
+   */
+  .entry {
+    position: relative;
+    margin-bottom: 14px;
+  }
+
+  #boxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: flex-end;
+  }
+
+  .box {
+    width: 34px; height: 44px;
+    display: grid;
+    place-content: center;
+    font-size: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-bottom-width: 3px;
+    border-radius: 6px;
+    color: #fff;
+  }
+  .box.filled { border-bottom-color: var(--accent); }
+  .box.cursor {
+    border-bottom-color: #fff;
+    background: #3a3d44;
+  }
+
+  /* pre-filled separators — visibly not something you type into */
+  .box.fixed {
+    width: auto;
+    min-width: 16px;
+    padding: 0 2px;
+    background: none;
+    border: 0;
+    color: var(--dim);
+    font-weight: 400;
+    align-self: end;
+    height: 44px;
+    align-content: end;
+    padding-bottom: 6px;
+  }
+  .box.gap { width: 10px; border: 0; background: none; }
+
+  /* the real input, invisible but fully interactive */
+  #entry {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent;
+    font-size: 16px;           /* 16px stops iOS zooming on focus */
+    outline: none;
+    cursor: text;
+  }
+  #entry::selection { background: transparent; }
+
+  .entry:focus-within #boxes { outline: 2px solid #fff; outline-offset: 6px; border-radius: 4px; }
+
+  /* ---------- controls ---------- */
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  button, select {
+    appearance: none;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 14px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #3a3d44; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #4752c4; }
+  :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  .hint { font-size: 12px; color: var(--dim); margin-top: 10px; }
+
+  #result {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border-left: 3px solid var(--line);
+    font-size: 14px;
+  }
+  #result[hidden] { display: none; }
+  #result.right { border-left-color: var(--good); }
+  #result.wrong { border-left-color: var(--warn); }
+  #result strong { color: #fff; }
+
+  .log {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .log div { padding: 2px 0; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Draw-tionary — guessing</h1>
+  <p class="sub">
+    Letter boxes with locked separators. Nothing submits until you press the
+    button, so you can retype as much as you like.
+  </p>
+
+  <div class="card">
+    <div class="meta">
+      <span>Somebody drew something</span>
+      <span class="pill" id="tierPill">—</span>
+      <span id="shape"></span>
+    </div>
+
+    <div class="track" id="track"><div class="fill" id="fill"></div></div>
+    <div class="bonusline">
+      <span id="bonusLabel">Bonus window</span>
+      <span id="bonusNow">—</span>
+    </div>
+
+    <div class="entry" id="entryWrap">
+      <div id="boxes" aria-hidden="true"></div>
+      <label for="entry" class="sr-only">Your guess</label>
+      <input id="entry" type="text" inputmode="text"
+             autocomplete="off" autocorrect="off" autocapitalize="off"
+             spellcheck="false" aria-describedby="shapeSr">
+    </div>
+    <p class="sr-only" id="shapeSr"></p>
+
+    <div class="row">
+      <button id="submit" class="primary" disabled>Submit guess</button>
+      <button id="clear">Clear</button>
+      <button id="replay">Replay ▸</button>
+    </div>
+
+    <p class="hint">
+      Type letters only — spaces, hyphens and apostrophes are already placed.
+      Backspace skips over them.
+    </p>
+
+    <div id="result" hidden></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label for="pick" style="color:var(--dim);font-size:13px">Test a word</label>
+      <select id="pick"></select>
+      <button id="newRound">New round</button>
+    </div>
+  </div>
+
+</div>
+
+<p class="sr-only" role="status" id="status"></p>
+
+<script src="bundle.js"></script>
+<script>
+/*
+ * Plain script, not a module — modules and fetch are both blocked on file://,
+ * and these pages need to survive being double-clicked. bundle.js is generated
+ * from lib/game.js and data/words.json by `npm run build`.
+ */
+const {
+  buildMask, letterCount, sanitiseLetters, assembleGuess, isMaskComplete,
+  describeMask, isCorrect, scoreGuess, bonusWindowFor, RULES
+} = window.Game;
+
+const $ = id => document.getElementById(id);
+
+let words   = null;
+let answer  = "";
+let tier    = "easy";
+let points  = 10;
+let mask    = [];
+let attempts = 0;
+
+/*
+ * The bonus clock is separate from the drawing replay, and starts exactly
+ * once per round.
+ *
+ * Two reasons. First, tying the bonus to the replay is unfair — someone who
+ * receives a three-stroke doodle would get a five-second window while someone
+ * else gets thirty for the same word. Second, if replaying reset the clock,
+ * hitting Replay would be a free bonus refill. So: re-watch as often as you
+ * like, and wrong guesses cost nothing but the time they take.
+ */
+let bonusStart  = 0;
+let bonusMs     = 30000;
+let bonusTimer  = null;
+let bonusExpired = false;
+
+// ---------------------------------------------------------------- boxes
+
+function renderBoxes() {
+  const typed = sanitiseLetters($("entry").value, mask);
+  const wrap  = $("boxes");
+  wrap.textContent = "";
+
+  let li = 0;
+  const focused = document.activeElement === $("entry");
+
+  for (const slot of mask) {
+    const el = document.createElement("span");
+
+    if (slot.type === "fixed") {
+      el.className = slot.char === " " ? "box gap" : "box fixed";
+      el.textContent = slot.char === " " ? "" : slot.char;
+    } else {
+      const ch = typed[li];
+      el.className = "box"
+        + (ch ? " filled" : "")
+        + (focused && li === typed.length ? " cursor" : "");
+      el.textContent = ch || "";
+      li++;
+    }
+    wrap.appendChild(el);
+  }
+
+  const complete = isMaskComplete(mask, typed);
+  $("submit").disabled = !complete;
+  $("submit").textContent = complete
+    ? "Submit guess"
+    : `${typed.length} / ${letterCount(mask)}`;
+}
+
+// ---------------------------------------------------------------- round
+
+function newRound(forced) {
+  const tiers = ["easy", "medium", "hard"];
+  tier = forced ? forced.tier : tiers[Math.floor(Math.random() * 3)];
+  const t = words.tiers[tier];
+  answer = forced ? forced.word : t.words[Math.floor(Math.random() * t.words.length)];
+  points = t.points;
+
+  mask = buildMask(answer);
+  attempts = 0;
+
+  $("entry").value = "";
+  $("tierPill").textContent = tier + " · " + points + " pts";
+  $("tierPill").className = "pill " + tier;
+  $("shape").textContent = describeMask(mask);
+  $("shapeSr").textContent = "Guess the drawing. " + describeMask(mask);
+  $("result").hidden = true;
+  $("log").textContent = "";
+
+  renderBoxes();
+  startBonusClock();
+  $("entry").focus();
+}
+
+// ---------------------------------------------------------------- replay
+
+/** Starts the bonus clock. Called once per round, never by Replay. */
+function startBonusClock() {
+  clearInterval(bonusTimer);
+  bonusMs = bonusWindowFor(tier);
+  bonusStart = performance.now();
+  bonusExpired = false;
+  $("track").classList.remove("done");
+  $("bonusLabel").textContent =
+    "Bonus window · " + Math.round(bonusMs / 1000) + "s for " + tier + " words";
+
+  bonusTimer = setInterval(() => {
+    const pct = Math.min(1, (performance.now() - bonusStart) / bonusMs);
+    $("fill").style.width = (100 - pct * 100) + "%";
+
+    if (pct >= 1) {
+      clearInterval(bonusTimer);
+      bonusExpired = true;
+      $("track").classList.add("done");
+    }
+    updateBonus();
+  }, 80);
+
+  updateBonus();
+}
+
+function elapsedMs() {
+  return bonusExpired ? Infinity : performance.now() - bonusStart;
+}
+
+function updateBonus() {
+  const s = scoreGuess({ points, guessedAtMs: elapsedMs(), bonusWindowMs: bonusMs });
+  const left = Math.max(0, Math.ceil((bonusMs - (performance.now() - bonusStart)) / 1000));
+
+  $("bonusNow").textContent = bonusExpired
+    ? points + " pts — bonus expired"
+    : points + " + " + s.bonus + " = " + s.total + "  ·  " + left + "s left";
+}
+
+/*
+ * Replaying the drawing is purely visual. It deliberately does not touch the
+ * bonus clock — otherwise the Replay button would be an exploit.
+ */
+function replayDrawing() {
+  say("Replaying the drawing. This does not affect your bonus.");
+}
+
+// ---------------------------------------------------------------- submit
+
+function submit() {
+  const typed = sanitiseLetters($("entry").value, mask);
+  if (!isMaskComplete(mask, typed)) return;
+
+  const guess = assembleGuess(mask, typed);
+  const at = elapsedMs();
+  attempts++;
+
+  const box = $("result");
+  box.hidden = false;
+
+  if (isCorrect(guess, answer)) {
+    const s = scoreGuess({ points, guessedAtMs: at, bonusWindowMs: bonusMs });
+    box.className = "right";
+    box.innerHTML =
+      "<strong>Correct — " + answer + "</strong><br>" +
+      s.base + " base" + (s.bonus ? " + " + s.bonus + " early bonus" : "") +
+      " = <strong>" + s.total + " points</strong>" +
+      (s.bonus
+        ? "<br>Answered with " + Math.round(s.earlyFraction * 100) + "% of the bonus window left"
+          + (attempts > 1 ? ", after " + attempts + " tries." : ".")
+        : "<br>Answered after the bonus window — no bonus, full base points.");
+    clearInterval(bonusTimer);
+    say("Correct. " + s.total + " points.");
+  } else {
+    box.className = "wrong";
+    box.innerHTML = "<strong>Not quite.</strong> No penalty — the clock keeps running, " +
+                    "but your bonus is not reset. Try again.";
+    say("Not quite. Try again, no penalty.");
+  }
+
+  const line = document.createElement("div");
+  line.textContent = "attempt " + attempts + ": " + guess +
+    (bonusExpired ? "  (after bonus window)" : "  (" + (at / 1000).toFixed(1) + "s in)");
+  $("log").appendChild(line);
+}
+
+function say(m) { $("status").textContent = m; }
+
+// ---------------------------------------------------------------- wiring
+
+const entry = $("entry");
+
+entry.addEventListener("input", () => {
+  // clamp and strip in place so the invisible input never drifts from the boxes
+  const clean = sanitiseLetters(entry.value, mask);
+  if (entry.value !== clean) entry.value = clean;
+  renderBoxes();
+});
+
+entry.addEventListener("focus", renderBoxes);
+entry.addEventListener("blur",  renderBoxes);
+
+// keep the caret at the end — the boxes fill left to right, so mid-string
+// editing would desync the visual and is never what someone means here
+["click", "keyup", "select"].forEach(ev =>
+  entry.addEventListener(ev, () => {
+    const n = entry.value.length;
+    if (entry.selectionStart !== n || entry.selectionEnd !== n) {
+      entry.setSelectionRange(n, n);
+      renderBoxes();
+    }
+  }));
+
+entry.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (!$("submit").disabled) submit();
+  }
+});
+
+$("entryWrap").addEventListener("click", () => entry.focus());
+
+$("submit").addEventListener("click", submit);
+
+$("clear").addEventListener("click", () => {
+  entry.value = "";
+  renderBoxes();
+  entry.focus();
+  say("Cleared.");
+});
+
+$("replay").addEventListener("click", replayDrawing);
+$("newRound").addEventListener("click", () => newRound());
+
+$("pick").addEventListener("change", e => {
+  if (!e.target.value) return;
+  const [tier, word] = e.target.value.split("|");
+  newRound({ tier, word });
+});
+
+// ---------------------------------------------------------------- boot
+
+(() => {
+  words = window.WORDS;
+
+  if (!words) {
+    document.querySelector(".wrap").insertAdjacentHTML("afterbegin",
+      '<div class="card" style="border-color:var(--bad)">' +
+      '<strong>bundle.js is missing or stale.</strong><br>' +
+      'Run <code>npm run build</code> in the project folder to regenerate it.</div>');
+    return;
+  }
+
+  const sel = $("pick");
+  for (const tier of ["easy", "medium", "hard"]) {
+    const g = document.createElement("optgroup");
+    g.label = tier;
+    for (const w of words.tiers[tier].words) {
+      const o = document.createElement("option");
+      o.value = tier + "|" + w;
+      o.textContent = w;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+
+  newRound();
+})();
+</script>
+</body>
+</html>
