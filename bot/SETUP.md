@@ -65,6 +65,16 @@ npm run register
 With `DISCORD_GUILD_ID` set, `/draw` and `/scores` appear in that server
 straight away. Without it they register globally and can take an hour.
 
+The script reads the existing commands first and carries any **Entry Point**
+command through untouched. That is the "Launch" item Discord creates when you
+enable Activities, and it belongs to the Activity rather than to us. Without
+that step the bulk replace would delete it, and Discord rightly refuses:
+
+```
+400 {"code": 50240, "message": "You cannot remove this app's Entry Point
+command in a bulk update operation."}
+```
+
 ## 5. Play a round
 
 In your server: `/draw` → open the private link → pick a word → draw →
@@ -221,8 +231,28 @@ OAuth2 Error: invalid_request: Missing "redirect_uri" in request.
 which reads like a bug in the Activity rather than an empty field in a
 settings page three tabs away.
 
-**Installation → Installation Contexts**: tick both User Install and Guild
-Install, or the Activity won't be launchable everywhere you'd expect.
+**Installation → Default Install Settings.** This is the one that decides
+whether people who find the app in the App Directory get a working game.
+
+The "Add App" button there is a *Discord Provided Link* — it carries no scopes
+in the URL and uses whatever these settings say. Under **Guild Install**:
+
+| Field | Value |
+|---|---|
+| Scopes | `applications.commands`, **`bot`** |
+| Permissions | View Channel, Send Messages, Embed Links |
+
+Omit `bot` and every discovery install produces an app with no bot in the
+server: the Activity opens, drawings save, and nothing ever posts. The player
+sees "saved but couldn't post" and there is nothing they can do about it.
+
+Run `npm run app:urls` to read the current settings back and have the missing
+pieces named.
+
+**On User Install:** a user install never carries a bot. Someone who installs
+that way can open the Activity but cannot post a drawing, which is a broken
+game. Prefer Guild Install for this app, and only enable User Install if you
+have decided what a bot-less player should see.
 
 **Activities → Settings**: tick **Enable Activities**, and tick the platforms
 (web, iOS, Android) you want it to appear on. It will not show in the App

@@ -57,7 +57,70 @@ async function current() {
   console.log(`  privacy url: ${app.privacy_policy_url ?? "(not set)"}`);
   console.log(`  terms url:   ${app.terms_of_service_url ?? "(not set)"}`);
   console.log(`  flags:       ${app.flags}`);
+
+  installSettings(app);
   return app;
+}
+
+/*
+ * The "Add App" button in the App Directory is a Discord Provided Link: it
+ * carries no scopes in the URL and uses whatever Default Install Settings say.
+ *
+ * If Guild Install's scopes omit `bot`, everyone who installs from discovery
+ * gets an app with no bot in their server — the Activity opens, drawings save,
+ * and nothing can ever be posted. Nothing in the code can detect or fix that,
+ * so it is worth being able to read it from here.
+ */
+function installSettings(app) {
+  const NAMES = { 0: "Guild install (to a server)", 1: "User install (to an account)" };
+  const cfg = app.integration_types_config ?? {};
+
+  console.log("\nDefault install settings — what the App Directory button asks for:");
+
+  if (!Object.keys(cfg).length) {
+    console.log("  (none reported — set them on the Installation page)");
+    return;
+  }
+
+  for (const [type, conf] of Object.entries(cfg)) {
+    const params = conf?.oauth2_install_params;
+    console.log(`\n  ${NAMES[type] ?? "type " + type}`);
+
+    if (!params) {
+      console.log("    no default install params");
+      continue;
+    }
+
+    const scopes = params.scopes ?? [];
+    const perms  = BigInt(params.permissions ?? "0");
+
+    console.log(`    scopes:      ${scopes.join(", ") || "(none)"}`);
+    console.log(`    permissions: ${perms}`);
+
+    const NEED = { VIEW_CHANNEL: 1n << 10n, SEND_MESSAGES: 1n << 11n, EMBED_LINKS: 1n << 14n };
+    const missingPerms = Object.entries(NEED)
+      .filter(([, bit]) => (perms & bit) === 0n)
+      .map(([n]) => n);
+
+    if (type === "0") {
+      if (!scopes.includes("bot")) {
+        console.log("    ⚠ MISSING `bot` — installs from the App Directory will have no bot,");
+        console.log("      so drawings will save but never post to the channel.");
+      }
+      if (missingPerms.length) {
+        console.log(`    ⚠ missing permissions: ${missingPerms.join(", ")}`);
+        console.log("      Without VIEW_CHANNEL, posting fails with 50001 Missing Access.");
+      }
+      if (scopes.includes("bot") && !missingPerms.length) {
+        console.log("    ✓ a discovery install will include a working bot");
+      }
+    }
+
+    if (type === "1") {
+      console.log("    note: a user install never carries a bot. Someone who installs");
+      console.log("      this way can open the Activity but cannot post a drawing.");
+    }
+  }
 }
 
 async function patch(payload) {
