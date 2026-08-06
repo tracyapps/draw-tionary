@@ -112,6 +112,24 @@ moderator, so keep them if you have the room.
 
 ---
 
+## Bot permissions
+
+The invite link on the landing page asks for permissions integer **`19456`**:
+
+| Permission | Why |
+|---|---|
+| View Channel | You cannot post into a channel you cannot see |
+| Send Messages | Posting the drawing |
+| Embed Links | The post is an embed |
+
+Nothing else, and **no privileged gateway intents** — this is an HTTP
+interactions bot with no gateway connection, so Message Content, Server
+Members and Presence are all unnecessary. Worth saying in the listing: it's
+the most reassuring fact about the app.
+
+Add **Attach Files** later, when Track B starts posting rendered drawings
+(that would make it `52224`). Not before.
+
 ## Categories / tags
 
 Pick from whatever the portal offers. Best fits, in order of how well they

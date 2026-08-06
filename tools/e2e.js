@@ -242,9 +242,21 @@ let token;
 
   // The invite link has to carry the permissions the bot actually needs.
   const invite = /discord\.com\/oauth2\/authorize\?[^"]+/.exec(html)?.[0] ?? "";
-  /permissions=18432/.test(invite) && /scope=bot(%20|\+)applications\.commands/.test(invite)
-    ? ok("the invite link asks for Send Messages + Embed Links and nothing else")
+  /*
+   * 19456 = View Channel (1024) + Send Messages (2048) + Embed Links (16384).
+   *
+   * View Channel is the one that gets forgotten, because the bot only posts
+   * and never reads. But a channel you cannot see is a channel you cannot post
+   * to, and Discord reports that as 50001 "Missing Access" — which reads like
+   * the bot is missing from the server rather than missing one checkbox.
+   */
+  /permissions=19456/.test(invite) && /scope=bot(%20|\+)applications\.commands/.test(invite)
+    ? ok("the invite asks for View Channel + Send Messages + Embed Links, and nothing else")
     : bad("invite link has the wrong scopes or permissions: " + invite);
+
+  !/permissions=18432/.test(invite)
+    ? ok("the invite is not missing View Channel — the 50001 trap")
+    : bad("invite omits View Channel; posting will fail with Missing Access");
 
   for (const [path, needle] of [["/privacy", "dt_viewer"], ["/terms", "Acceptable use"]]) {
     const r = await fetch(BASE + path);

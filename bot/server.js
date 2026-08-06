@@ -196,8 +196,33 @@ const CACHE = {
 
 // ---------------------------------------------------------------- discord api
 
+/*
+ * Discord's own error bodies are terse, and the interesting information is the
+ * status code. These are the four that actually happen when a drawing fails to
+ * post, each of which needs a completely different fix — so name them rather
+ * than logging "request failed" and leaving somebody to guess.
+ */
+const DISCORD_HINTS = {
+  401: "the bot token is wrong or was reset — check DISCORD_BOT_TOKEN",
+  403: "the bot is in the server but lacks Send Messages or Embed Links in that channel",
+  404: "no such channel — either the id is empty, or the bot was never added to that server"
+};
+
+class DiscordError extends Error {
+  constructor(status, path, body) {
+    const hint = DISCORD_HINTS[status];
+    super(`Discord ${path} → ${status}${hint ? ` (${hint})` : ""} ${body}`);
+    this.status = status;
+    this.hint = hint;
+  }
+}
+
 async function discord(path, init = {}) {
-  if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN is not set");
+  if (!DISCORD_BOT_TOKEN) {
+    const err = new Error("DISCORD_BOT_TOKEN is not set");
+    err.hint = "the server has no bot token, so it cannot post anything";
+    throw err;
+  }
 
   const res = await fetch("https://discord.com/api/v10" + path, {
     ...init,
@@ -209,7 +234,7 @@ async function discord(path, init = {}) {
   });
 
   if (!res.ok) {
-    throw new Error(`Discord ${init.method ?? "GET"} ${path} → ${res.status} ${await res.text()}`);
+    throw new DiscordError(res.status, `${init.method ?? "GET"} ${path}`, await res.text());
   }
   return res.status === 204 ? null : res.json();
 }
@@ -323,10 +348,23 @@ async function handleSubmitRoute(req, res) {
     });
     await store.setMessageId(roundId, msg.id);
   } catch (err) {
-    // The drawing is saved either way — don't lose someone's work because
-    // Discord had a bad minute.
-    console.error("could not post to channel:", err);
-    return json(res, 200, { ok: true, roundId, posted: false });
+    /*
+     * The drawing is saved either way — don't lose someone's work because
+     * Discord had a bad minute. But say clearly what went wrong: "couldn't
+     * post" with no reason sends people looking at their own drawing when the
+     * answer is a missing permission or a channel the bot was never invited to.
+     */
+    console.error(
+      `could not post round ${roundId} to channel ${session.channelId || "(empty!)"}:`,
+      err.message
+    );
+    return json(res, 200, {
+      ok: true,
+      roundId,
+      posted: false,
+      reason: err.hint ?? "Discord refused the message",
+      channelId: session.channelId || null
+    });
   }
 
   json(res, 200, { ok: true, roundId, posted: true });
@@ -434,10 +472,25 @@ async function handleTokenRoute(req, res) {
    * identity comes from the token exchange above, never from the frame.
    */
   const now = Date.now();
+  const guildId   = String(body.guildId ?? "");
+  const channelId = String(body.channelId ?? "");
+
+  /*
+   * Loud, because everything downstream depends on it and the symptom is
+   * otherwise a drawing that saves and then refuses to post — which looks
+   * like a bot permission problem rather than a missing query parameter.
+   */
+  if (!channelId) {
+    console.warn(
+      `${user.username ?? user.id} signed in from an Activity with no channel_id. ` +
+      `Drawings from this session will have nowhere to post.`
+    );
+  }
+
   const session = await store.createViewerSession({
     userId: user.id,
-    guildId: String(body.guildId ?? ""),
-    channelId: String(body.channelId ?? ""),
+    guildId,
+    channelId,
     isModerator: false,   // re-established per round by publicView
     issuedAt: now,
     expiresAt: now + VIEWER_TTL_MS
@@ -520,6 +573,27 @@ async function handleDrawSessionRoute(req, res) {
   const round = await store.getRound(body.roundId);
   const guildId   = round?.guildId   ?? viewer.guildId;
   const channelId = round?.channelId ?? viewer.channelId;
+
+  /*
+   * No channel means the finished drawing has nowhere to go. Minting a session
+   * anyway lets somebody spend an hour on a hard word and only then discover
+   * it cannot be posted — the failure has to happen here, before they draw.
+   *
+   * The channel is never taken from the request body. It comes from the round
+   * being viewed, or from the Activity's own query parameters recorded at sign
+   * in. Trusting the browser would let anyone make the bot post into any
+   * channel it can see.
+   */
+  if (!channelId) {
+    console.error(
+      `refusing to deal a card to ${viewer.userId}: no channel on the session ` +
+      `(guild "${guildId}"). Discord did not supply channel_id when the Activity started.`
+    );
+    return json(res, 409, {
+      error: "I can't tell which channel to post to.",
+      detail: "Try launching from a channel, or run /draw there instead."
+    });
+  }
 
   const now = Date.now();
   const recent = await store.recentWords(guildId, 40);

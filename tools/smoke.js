@@ -48,6 +48,13 @@ function stubCanvas(win) {
   };
   win.Element.prototype.setPointerCapture = noop;
   win.Element.prototype.releasePointerCapture = noop;
+
+  // jsdom has no blob URLs, and the download path needs them. Without these
+  // the export silently throws and looks like a broken feature.
+  if (!win.URL.createObjectURL) {
+    win.URL.createObjectURL = () => "blob:stub";
+    win.URL.revokeObjectURL = noop;
+  }
   if (!win.matchMedia) {
     win.matchMedia = q => ({ matches: false, media: q, addEventListener: noop });
   }
@@ -511,6 +518,69 @@ function scribble(win, doc) {
   $("notice").getAttribute("role") === "alert"
     ? ok("notices announce themselves rather than stealing focus mid-drawing")
     : bad("notice is not announced to assistive tech");
+}
+
+// ---- downloads inside the Discord Activity ----
+
+{
+  /*
+   * A Discord Activity runs in a sandboxed iframe that ignores download
+   * clicks — no exception, no event, nothing. The canvas used to announce
+   * "Saved <file>" regardless, telling people their drawing was safe on disk
+   * when it was not. That is worse than the feature simply not working.
+   */
+  const calls = [];
+  const { win, doc } = await load("draw.html", {
+    dir: "app",
+    url: "http://localhost/.proxy/draw?t=TESTTOKEN",
+    fetch: (url, init) => {
+      calls.push({ url: String(url), init });
+      return String(url).startsWith("/api/session")
+        ? reply(200, { userId: "u1", card: CARD, expiresAt: Date.now() + 1800000 })
+        : reply(200, { ok: true, posted: true });
+    }
+  });
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  /Save PNG.*not in Discord/i.test($("png").textContent)
+    ? ok("inside the Activity, Save PNG says up front that it can't work")
+    : bad("Save PNG gives no warning inside the Activity: " + $("png").textContent);
+
+  click(win, [...$("cardOut").querySelectorAll("button.choice")][0]);
+  scribble(win, doc);
+
+  click(win, $("png"));
+  await settle();
+
+  const notice = $("notice");
+  notice.hidden === false && /downloads/i.test(notice.textContent)
+    ? ok("pressing it explains why nothing downloaded")
+    : bad("silent failure on Save PNG inside the Activity");
+
+  !/Saved /.test($("status").textContent)
+    ? ok("and it does not claim the file was saved")
+    : bad("claimed a download succeeded inside a sandbox that blocks downloads");
+}
+
+{
+  // Outside Discord the same buttons must still work normally.
+  const { win, doc } = await loadApp();
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  !/not in Discord/.test($("png").textContent)
+    ? ok("in a normal browser Save PNG is offered without caveats")
+    : bad("the Discord warning leaked into the browser build");
+
+  click(win, [...$("cardOut").querySelectorAll("button.choice")][0]);
+  scribble(win, doc);
+  click(win, $("png"));
+  await settle();
+
+  /Saved /.test($("status").textContent)
+    ? ok("and a browser download reports success")
+    : bad("Save PNG stopped working in a normal browser: " + $("status").textContent);
 }
 
 // ---- an expired link ----

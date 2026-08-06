@@ -72,10 +72,17 @@
             watching you draw.
           </p>
           <div class="actions">
-            <!-- Scopes and permissions are derived from what the bot actually
-                 does: it posts one embed with buttons. Nothing more. -->
+            <!--
+              19456 = View Channel + Send Messages + Embed Links.
+
+              View Channel looks unnecessary, because the bot only ever posts
+              and never reads. It isn't: you cannot post into a channel you
+              cannot see. Leaving it out fails with 50001 "Missing Access"
+              rather than a permissions error, which sends you hunting through
+              channel overrides instead of the invite link.
+            -->
             <a class="btn btn-primary"
-               href="https://discord.com/oauth2/authorize?client_id=1534509794096975962&permissions=18432&scope=bot%20applications.commands">
+               href="https://discord.com/oauth2/authorize?client_id=1534509794096975962&permissions=19456&scope=bot%20applications.commands">
               Add to Discord
             </a>
             <a class="btn" href="#how">See how it works</a>

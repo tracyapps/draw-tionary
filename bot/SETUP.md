@@ -10,9 +10,22 @@ In the [Discord Developer Portal](https://discord.com/developers/applications):
 1. **New Application** → name it Draw-tionary
 2. **General Information** → copy the **Application ID** and **Public Key**
 3. **Bot** → **Reset Token**, copy it. This is a password; treat it like one.
-4. **Installation** → add scopes `bot` and `applications.commands`,
-   bot permissions `Send Messages` and `Embed Links`, then use the generated
-   link to add it to your test server.
+4. **Installation** → add scopes `bot` and `applications.commands`, and bot
+   permissions **`View Channel`**, `Send Messages`, `Embed Links` — permissions
+   integer `19456`. Use the generated link to add it to your test server.
+
+   `View Channel` looks unnecessary, since the bot only ever posts and never
+   reads anything. Leave it out and every post fails with:
+
+   ```
+   403 {"message": "Missing Access", "code": 50001}
+   ```
+
+   Note that is **50001 Missing Access**, not 50013 Missing Permissions. 50013
+   means "can see the channel, can't do that here"; 50001 means "can't see the
+   channel at all", which reads like the bot was never added to the server and
+   sends you hunting through channel overrides. You cannot post into a channel
+   you cannot see.
 
 Copy `.env.example` to `.env` and fill in what you collected.
 
@@ -193,6 +206,27 @@ to end and known good; leaving the flag off means the Activity can be developed
 without anybody's game breaking.
 
 ### In the Developer Portal
+
+**OAuth2 → Redirects → add `https://127.0.0.1` → Save.**
+
+Do this first. It is a placeholder that nothing ever redirects to — the SDK
+handles returning the user to the Activity itself — but OAuth2 refuses to issue
+a code for an app with no redirect configured at all. Skip it and `authorize()`
+fails with:
+
+```
+OAuth2 Error: invalid_request: Missing "redirect_uri" in request.
+```
+
+which reads like a bug in the Activity rather than an empty field in a
+settings page three tabs away.
+
+**Installation → Installation Contexts**: tick both User Install and Guild
+Install, or the Activity won't be launchable everywhere you'd expect.
+
+**Activities → Settings**: tick **Enable Activities**, and tick the platforms
+(web, iOS, Android) you want it to appear on. It will not show in the App
+Launcher on a platform you haven't ticked.
 
 Activities → **URL Mappings**. You need exactly one:
 

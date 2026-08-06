@@ -614,6 +614,19 @@
   let posted  = false;
   let spent   = false;   // the session is gone; no retry can succeed
 
+  /*
+   * Are we running inside Discord's Activity frame?
+   *
+   * The /.proxy path prefix is the signal. It exists only because Discord's
+   * sandbox proxies every request an Activity makes, so nothing else produces
+   * it. Checking `window.self !== window.top` as well sounds safer and isn't —
+   * it's true of any iframe, and false in a test harness, so it would only
+   * make this harder to verify without making it more correct.
+   *
+   * This matters because the Activity sandbox silently ignores downloads.
+   */
+  const inActivity = location.pathname.startsWith("/.proxy");
+
   // ---------------------------------------------------------------- canvas
 
   let dpr = 1, cssW = 0, cssH = 0;
@@ -861,7 +874,27 @@
              "drawtionary-" + Date.now() + ".json");
   }
 
+  /*
+   * Saving a file means creating a blob URL and clicking a link with a
+   * `download` attribute. Inside a sandboxed iframe without allow-downloads —
+   * which is where a Discord Activity runs — the browser ignores that click
+   * silently. No exception to catch, no event to listen for, nothing.
+   *
+   * So this used to announce "Saved <name>" whether or not anything happened,
+   * which is worse than the download failing: it tells someone their drawing
+   * is safe on disk when it isn't.
+   */
   function download(blob, name) {
+    if (inActivity) {
+      notice(
+        "Discord blocks file downloads inside the app. Post your drawing — " +
+        "it's kept for good — and save it later from a browser.",
+        "warn"
+      );
+      say("Downloads are not available inside Discord.");
+      return;
+    }
+
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement("a"), { href: url, download: name });
     document.body.appendChild(a);
@@ -1363,9 +1396,19 @@
         return;
       }
 
-      lockDown(body.posted
-        ? "Posted. Go and watch people struggle with it."
-        : "Saved — but I couldn't post it to the channel. Someone should check on the bot.");
+      if (body.posted) {
+        lockDown("Posted. Go and watch people struggle with it.");
+      } else {
+        /*
+         * Your drawing is safe — it is in the database and has an id. What
+         * failed is the bot posting it, which is a server-side problem you
+         * cannot fix from here. Saying which one saves somebody an hour.
+         */
+        lockDown(
+          "Saved, but I couldn't post it to the channel — " +
+          (body.reason ?? "Discord refused the message") + "."
+        );
+      }
     } catch {
       notice("Couldn't reach the server. Your drawing is still here — try again.", "bad");
     } finally {
@@ -1396,6 +1439,19 @@
   buildPalette();
   setColor(color);
   syncTools();
+
+  /*
+   * Say up front what can't work, rather than letting someone press it and
+   * wonder. The items stay clickable so the explanation is reachable — a
+   * disabled button with no reason is its own small cruelty.
+   */
+  if (inActivity) {
+    $("png").textContent  = "Save PNG — not in Discord";
+    $("json").textContent = "Save drawing data — not in Discord";
+    for (const id of ["png", "json"]) {
+      $(id).title = "Discord blocks downloads inside the app. Open the game in a browser to save files.";
+    }
+  }
 
   // On a phone the palette eats a third of the screen, so it starts collapsed
   // and the canvas gets the space. Desktop keeps it open.
