@@ -33,6 +33,9 @@ const PORT = 39_517;
 const BASE = `http://localhost:${PORT}`;
 
 process.env.DISCORD_PUBLIC_KEY = PUB_HEX;
+// The Activity page needs an application id substituted into it, so the
+// server has to have one the way it would in production.
+process.env.DISCORD_APP_ID = "1234567890";
 process.env.PORT = String(PORT);
 process.env.PUBLIC_URL = BASE;
 process.env.DB_FILE = join(tmp, "test.db");
@@ -108,6 +111,56 @@ let token;
 
   body.data.flags === 64 ? ok("the canvas link is ephemeral")
                          : bad("the canvas link was posted publicly");
+}
+
+// ---------------------------------------------------------------- activity
+
+{
+  /*
+   * The Activity iframe loads the root of the mapped domain, and the root
+   * mapping's prefix cannot be changed — so `/` has to serve the landing page
+   * to the world and the game to Discord. frame_id is how they're told apart.
+   */
+  const plain = await (await fetch(`${BASE}/`)).text();
+  const framed = await (await fetch(`${BASE}/?frame_id=abc&channel_id=c1&guild_id=g1`)).text();
+
+  /Add to Discord/.test(plain) && !/discord-client-id/.test(plain)
+    ? ok("/ serves the landing page to an ordinary browser")
+    : bad("/ served the Activity to a normal visitor");
+
+  /discord-client-id/.test(framed) && !/Add to Discord/.test(framed)
+    ? ok("/ serves the Activity when Discord frames it")
+    : bad("/ did not serve the Activity to a framed request");
+
+  /content="\d+"/.test(framed)
+    ? ok("the application id is substituted into the Activity page")
+    : bad("client id placeholder was not filled in");
+
+  // The SDK is vendored to our own origin because an Activity is sandboxed
+  // and cannot reach a CDN without a URL mapping for someone else's domain.
+  const sdk = await fetch(`${BASE}/app/vendor/discord-sdk/index.mjs`);
+  sdk.ok && /javascript/.test(sdk.headers.get("content-type") ?? "")
+    ? ok("the vendored SDK is served as JavaScript, which module scripts require")
+    : bad(`SDK served as ${sdk.status} ${sdk.headers.get("content-type")}`);
+}
+
+{
+  // Without the client secret the token exchange must say so plainly rather
+  // than failing somewhere deep inside an OAuth call.
+  const res = await fetch(`${BASE}/api/token`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "whatever" })
+  });
+  const body = await res.json();
+
+  res.status === 503 && /CLIENT_SECRET/.test(body.detail ?? "")
+    ? ok("an unconfigured token exchange names the missing setting")
+    : bad(`expected a clear 503, got ${res.status} ${JSON.stringify(body)}`);
+
+  const noCookie = await fetch(`${BASE}/api/activity/context`);
+  noCookie.status === 401
+    ? ok("activity context needs a session — the frame can't ask anonymously")
+    : bad(`expected 401 without a cookie, got ${noCookie.status}`);
 }
 
 // ---------------------------------------------------------------- HEAD

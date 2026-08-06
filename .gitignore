@@ -13,3 +13,5 @@ art/*.design
 art/*.afdesign
 art/*.png
 art/*.jpg
+# Vendored from node_modules by `npm run build`
+app/vendor/

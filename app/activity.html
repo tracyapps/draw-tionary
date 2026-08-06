@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Draw-tionary</title>
+
+<!--
+  Filled in by the server when this page is served. It is the application id,
+  which is public — it appears in every invite link — so there is nothing here
+  worth hiding. Doing it server-side just avoids a build step.
+-->
+<meta name="discord-client-id" content="__DISCORD_APP_ID__">
+<style>
+  :root {
+    --bg:      #1e1f22;
+    --panel:   #2b2d31;
+    --panel-2: #313338;
+    --line:    #3f4147;
+    --ink:     #dbdee1;
+    --ink-dim: #949ba4;
+    --accent:  #5865f2;
+    --good:    #23a55a;
+    --warn:    #f0b232;
+    --bad:     #f23f43;
+    --radius:  10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* The frame is small and often portrait on mobile — everything centres. */
+  .screen {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    text-align: center;
+  }
+  .screen[hidden] { display: none; }
+
+  .inner { width: min(460px, 100%); }
+
+  h1 { margin: 0 0 8px; font-size: 22px; letter-spacing: -.01em; }
+  p  { margin: 0 0 18px; color: var(--ink-dim); }
+
+  button {
+    appearance: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    /* 44px floor: this is a phone target as often as a desktop one. */
+    min-height: 46px;
+    padding: 12px 18px;
+    cursor: pointer;
+  }
+  button:hover { background: #3a3d44; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #4752c4; }
+  button.quiet { background: none; border-color: transparent; color: var(--ink-dim); }
+  button.quiet:hover { color: var(--ink); background: var(--panel-2); }
+
+  :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  /* ---------- loading ---------- */
+
+  .spinner {
+    width: 34px; height: 34px;
+    margin: 0 auto 16px;
+    border: 3px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 3s; }
+  }
+
+  /* ---------- word card ---------- */
+
+  .choices { display: grid; gap: 10px; margin-bottom: 16px; }
+
+  .choice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 17px;
+    text-align: left;
+  }
+  .choice .tier {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+  .choice .tier.easy   { color: #7ee2a8; border-color: #2c5c41; }
+  .choice .tier.medium { color: #ffd479; border-color: #6b5527; }
+  .choice .tier.hard   { color: #ff9d9f; border-color: #6e3436; }
+
+  /* ---------- error ---------- */
+
+  .bad { color: #ff9d9f; }
+
+  .detail {
+    margin-top: 14px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink-dim);
+    word-break: break-word;
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+</style>
+</head>
+<body>
+
+<!--
+  The Activity is a single-page app, as the SDK requires. Each screen is a
+  section that gets shown or hidden; nothing here navigates, because a
+  navigation inside the frame would tear down the SDK's connection to Discord.
+-->
+
+<section class="screen" id="loading">
+  <div class="inner">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loadingText">Getting things ready…</p>
+  </div>
+</section>
+
+<section class="screen" id="card" hidden>
+  <div class="inner">
+    <h1>Choose a word</h1>
+    <p>Harder words are worth more. There's no timer.</p>
+    <div class="choices" id="cardOut"></div>
+  </div>
+</section>
+
+<section class="screen" id="guess" hidden>
+  <div class="inner">
+    <h1 id="guessTitle">Somebody drew something</h1>
+    <p id="guessSub"></p>
+    <div style="display:grid;gap:10px">
+      <button class="primary" id="goGuess">Watch it and guess</button>
+      <button class="quiet" id="skipGuess">Skip — deal me a word instead</button>
+    </div>
+  </div>
+</section>
+
+<section class="screen" id="failed" hidden>
+  <div class="inner">
+    <h1 class="bad">That didn't work</h1>
+    <p id="failText">Something went wrong starting the game.</p>
+    <button id="retry">Try again</button>
+    <p class="detail" id="failDetail" hidden></p>
+  </div>
+</section>
+
+<p class="sr-only" id="status" role="status"></p>
+
+<script type="module">
+/*
+ * Draw-tionary as a Discord Activity.
+ *
+ * The lifecycle, in order:
+ *
+ *   1. Discord loads this page in an iframe with its own query parameters.
+ *   2. Constructing the SDK starts a handshake; ready() resolves when done.
+ *   3. authorize() asks the user to allow us to identify them, and returns a
+ *      short-lived code.
+ *   4. We post the code to our server, which trades it for an access token
+ *      using the client secret and hands back a session cookie.
+ *   5. authenticate() completes the SDK's own handshake with that token.
+ *   6. We ask the server what this launch was for — a fresh word, or a
+ *      specific drawing somebody pressed Guess on.
+ *
+ * Everything the frame fetches goes through Discord's proxy, which is why
+ * every request below is prefixed with /.proxy — see api() at the bottom.
+ */
+
+import { DiscordSDK } from "/app/vendor/discord-sdk/index.mjs";
+
+const $ = id => document.getElementById(id);
+const say = msg => { $("status").textContent = msg; };
+
+const CLIENT_ID =
+  document.querySelector('meta[name="discord-client-id"]')?.content ?? "";
+
+const screens = ["loading", "card", "guess", "failed"];
+function show(name) {
+  for (const s of screens) $(s).hidden = s !== name;
+}
+
+function fail(text, detail) {
+  $("failText").textContent = text;
+  if (detail) {
+    $("failDetail").textContent = detail;
+    $("failDetail").hidden = false;
+  }
+  show("failed");
+  say(text);
+}
+
+// ---------------------------------------------------------------- proxy
+
+/*
+ * Inside an Activity the frame is sandboxed: requests to our own origin have
+ * to travel through Discord's proxy under the /.proxy prefix. Outside Discord
+ * — opening this page directly while developing — that prefix does not exist,
+ * so it is only applied when Discord actually framed us.
+ */
+const params  = new URLSearchParams(location.search);
+const framed  = params.has("frame_id");
+const base    = framed ? "/.proxy" : "";
+
+const api = (path, init) =>
+  fetch(base + path, { credentials: "same-origin", ...init });
+
+// Discord tells the frame where it is running. Identity never comes from
+// here — only routing does.
+const channelId = params.get("channel_id");
+const guildId   = params.get("guild_id");
+
+// ---------------------------------------------------------------- boot
+
+let sdk = null;
+
+async function boot() {
+  show("loading");
+  $("loadingText").textContent = "Connecting to Discord…";
+
+  if (!framed) {
+    fail(
+      "This page only runs inside Discord.",
+      "Open the app from the Discord App Launcher, or use /draw in a channel."
+    );
+    return;
+  }
+
+  try {
+    sdk = new DiscordSDK(CLIENT_ID);
+    await sdk.ready();
+  } catch (err) {
+    fail("Couldn't reach Discord from inside the app.", String(err?.message ?? err));
+    return;
+  }
+
+  let code;
+  try {
+    $("loadingText").textContent = "Checking who you are…";
+    ({ code } = await sdk.commands.authorize({
+      client_id: CLIENT_ID,
+      response_type: "code",
+      state: "",
+      // `none` means no consent prompt for people who have already allowed it.
+      prompt: "none",
+      // identify is the whole ask: a user id. Nothing about your servers,
+      // your friends, or your messages.
+      scope: ["identify"]
+    }));
+  } catch (err) {
+    fail("Couldn't get permission to identify you.", String(err?.message ?? err));
+    return;
+  }
+
+  let token;
+  try {
+    const res = await api("/api/token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, channelId, guildId })
+    });
+    token = await res.json();
+
+    if (!res.ok) {
+      fail(token.error ?? "Couldn't sign you in.", token.detail);
+      return;
+    }
+  } catch (err) {
+    fail("Couldn't reach the game server.", String(err?.message ?? err));
+    return;
+  }
+
+  try {
+    await sdk.commands.authenticate({ access_token: token.access_token });
+  } catch (err) {
+    fail("Discord wouldn't accept the sign-in.", String(err?.message ?? err));
+    return;
+  }
+
+  await route();
+}
+
+// ---------------------------------------------------------------- routing
+
+/*
+ * Why the Activity opened. Discord does not carry that into the frame, so the
+ * server wrote it down when the button was pressed and we ask for it here.
+ */
+async function route() {
+  $("loadingText").textContent = "Finding your game…";
+
+  let ctx;
+  try {
+    const res = await api("/api/activity/context?channel_id=" + encodeURIComponent(channelId ?? ""));
+    ctx = await res.json();
+    if (!res.ok) throw new Error(ctx.error ?? res.status);
+  } catch (err) {
+    fail("Couldn't work out what to show you.", String(err?.message ?? err));
+    return;
+  }
+
+  if (ctx.kind === "guess" && ctx.round) return showGuess(ctx.round);
+  return dealCard();
+}
+
+// ---------------------------------------------------------------- guessing
+
+let pendingRound = null;
+
+function showGuess(round) {
+  pendingRound = round;
+
+  const letters = round.mask.filter(s => s.type === "letter").length;
+  $("guessTitle").textContent = "Can you get this one?";
+  $("guessSub").textContent =
+    `A ${round.tier} word — ${letters} letters, worth ${round.points} points. ` +
+    (round.solverCount
+      ? `${round.solverCount} ${round.solverCount === 1 ? "person has" : "people have"} got it.`
+      : "Nobody has got it yet.");
+
+  show("guess");
+  say("A drawing is waiting for your guess.");
+}
+
+$("goGuess").addEventListener("click", () => {
+  /*
+   * The replay page already does all of this — mask, replay, scoring, the
+   * "your turn" hand-off. Inside the frame it is the same page, so there is
+   * one implementation of guessing rather than two that drift apart.
+   */
+  location.href = `${base}/watch/${encodeURIComponent(pendingRound.id)}`;
+});
+
+$("skipGuess").addEventListener("click", async () => {
+  // Clearing the intent means a reload doesn't drop them back here.
+  try {
+    await api("/api/activity/skip", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ channelId })
+    });
+  } catch { /* not fatal — worst case they land here again on reload */ }
+
+  show("loading");
+  $("loadingText").textContent = "Dealing you a word…";
+  await dealCard();
+});
+
+// ---------------------------------------------------------------- drawing
+
+async function dealCard() {
+  show("loading");
+  $("loadingText").textContent = "Dealing you a word…";
+
+  let body;
+  try {
+    const res = await api("/api/draw-session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ channelId })
+    });
+    body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.status);
+  } catch (err) {
+    fail("Couldn't get you a canvas.", String(err?.message ?? err));
+    return;
+  }
+
+  /*
+   * The canvas is the same page everyone else uses, with the same server-dealt
+   * card and the same submit path. The Activity's job was only ever to work
+   * out who you are and get you to it.
+   */
+  location.href = base + body.url;
+}
+
+// ---------------------------------------------------------------- retry
+
+$("retry").addEventListener("click", () => {
+  $("failDetail").hidden = true;
+  boot();
+});
+
+boot();
+</script>
+</body>
+</html>

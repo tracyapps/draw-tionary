@@ -44,7 +44,7 @@ const tables = db.prepare(
 ).all().map(r => r.name);
 
 const expected = [
-  "draw_sessions", "flags", "guesses", "moderation_log",
+  "activity_intents", "draw_sessions", "flags", "guesses", "moderation_log",
   "rounds", "scores", "view_grants", "viewer_sessions"
 ];
 JSON.stringify(tables) === JSON.stringify(expected)
@@ -252,6 +252,46 @@ db.prepare("SELECT COUNT(*) n FROM view_grants WHERE round_id='r2'").get().n ===
 db.prepare("SELECT COUNT(*) n FROM viewer_sessions WHERE user_id='sarah'").get().n === 2
   ? ok("deleting a round does not sign its viewers out of everything else")
   : bad("a deleted round cascaded into viewer sessions");
+
+// activity intents — why the iframe opened
+const insertIntent = db.prepare(`
+  INSERT INTO activity_intents
+    (user_id, guild_id, channel_id, kind, round_id, created_at, expires_at)
+  VALUES (?,?,?,?,?,?,?)
+  ON CONFLICT(user_id, channel_id) DO UPDATE SET
+    kind = excluded.kind, round_id = excluded.round_id, expires_at = excluded.expires_at
+`);
+
+insertRound.run("r4", "windmill", "hard", 35, "open", now, now);
+
+insertIntent.run("sarah", "g1", "c1", "guess", "r4", now, now + 300000);
+db.prepare("SELECT kind FROM activity_intents WHERE user_id='sarah' AND channel_id='c1'").get().kind === "guess"
+  ? ok("pressing Guess records that the Activity should open on that drawing")
+  : bad("intent was not recorded");
+
+// Pressing a different button replaces rather than queues.
+insertIntent.run("sarah", "g1", "c1", "draw", null, now + 1, now + 300000);
+const intents = db.prepare("SELECT * FROM activity_intents WHERE user_id='sarah' AND channel_id='c1'").all();
+intents.length === 1 && intents[0].kind === "draw" && intents[0].round_id === null
+  ? ok("a newer intent replaces the older one — the frame reflects the last press")
+  : bad("intents stacked instead of replacing: " + JSON.stringify(intents));
+
+// Same person, different channel, is a separate intent.
+insertIntent.run("sarah", "g1", "c2", "guess", "r4", now, now + 300000);
+db.prepare("SELECT COUNT(*) n FROM activity_intents WHERE user_id='sarah'").get().n === 2
+  ? ok("intents are per channel, so two channels don't fight over one player")
+  : bad("intents are not scoped per channel");
+
+try {
+  insertIntent.run("evan", "g1", "c1", "sideways", null, now, now + 1);
+  bad("an unknown intent kind was accepted");
+} catch { ok("intent kind is constrained to draw or guess"); }
+
+// A deleted drawing must not leave an intent pointing at it.
+db.prepare("DELETE FROM rounds WHERE id = 'r4'").run();
+db.prepare("SELECT COUNT(*) n FROM activity_intents WHERE round_id='r4'").get().n === 0
+  ? ok("deleting a drawing clears any intent to open it")
+  : bad("an intent outlived the drawing it pointed at");
 
 // leaderboard shape
 const insertScore = db.prepare(`

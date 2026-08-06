@@ -140,13 +140,92 @@ pressing the button again for every post in the channel.
 `tools/e2e.js` asserts all of this against the real server, including the
 paste case.
 
-### Running as a Discord Activity
+## Running as a Discord Activity
 
-Inside an Activity the pages run in a third-party iframe, where a `SameSite=Lax`
-cookie is simply not sent. Set `EMBEDDED_ACTIVITY=1` and serve over HTTPS and
-the cookie switches to `SameSite=None; Secure; Partitioned`, which is what
-works there. Over plain `http` locally it stays `Lax`, because a browser drops
-a `None` cookie without `Secure` and nothing would work at all.
+An Activity is the game running in an iframe inside Discord, launched from the
+App Launcher or from a button, rather than opened as a link in a browser. It is
+**not** voice-only — text channels and DMs both work, which is how Wordle does
+async play.
+
+This is built but **not proven**. See the honest caveat at the end.
+
+### How it hangs together
+
+**Entry point.** Discord loads the root of the mapped domain, and the root
+mapping's prefix is fixed at `/`. So `/` serves two things: the landing page to
+an ordinary browser, and `app/activity.html` when Discord frames it. They are
+told apart by the `frame_id` query parameter Discord adds.
+
+**Identity.** There is no `?t=` token — nobody ran a slash command. The frame
+asks Discord to authorize it, gets a short code, and posts it to `/api/token`.
+The server trades that for an access token using `DISCORD_CLIENT_SECRET`, reads
+the user, and sets the same viewer cookie the replay pages use.
+
+**Why it opened.** Discord tells the frame which channel it is in, but not
+which button was pressed — `/draw` and Guess look identical from inside. So the
+interaction handler writes an `activity_intents` row, and the frame asks
+`/api/activity/context` once it knows who it is. Guess lands you on that
+drawing; anything else deals a card. There is always a way out into your own
+card, which clears the intent so a reload doesn't drag you back.
+
+**The proxy.** An Activity is sandboxed and cannot reach external origins. Every
+request from the frame goes through `/.proxy/…`, which is why the page prefixes
+its own fetches. It also means the Embedded App SDK is **vendored** into
+`app/vendor/` by `npm run build` rather than loaded from a CDN — a CDN would
+need a URL mapping for somebody else's domain.
+
+### Turning it on
+
+| Variable | Value |
+|---|---|
+| `DISCORD_CLIENT_SECRET` | OAuth2 → Client Secret. Treat like the bot token. |
+| `ACTIVITY_ENABLED` | `1` to make `/draw` and Guess open the Activity |
+| `EMBEDDED_ACTIVITY` | `1` so the cookie works in a third-party frame |
+
+`EMBEDDED_ACTIVITY` switches the viewer cookie to
+`SameSite=None; Secure; Partitioned`, which is the only thing a browser sends
+inside an iframe. It needs HTTPS; over plain `http` locally the cookie stays
+`Lax`, because a browser drops a `None` cookie without `Secure` and nothing
+would work at all.
+
+`ACTIVITY_ENABLED` is off by default on purpose. The link-out flow is tested end
+to end and known good; leaving the flag off means the Activity can be developed
+without anybody's game breaking.
+
+### In the Developer Portal
+
+Activities → **URL Mappings**. You need exactly one:
+
+| Prefix | Target |
+|---|---|
+| `/` | your domain |
+
+**Delete any proxy path mappings pointing at your own domain.** Those are an
+allowlist for *external* hosts you want to reach from the sandbox. A mapping
+like `/draw → your-domain` actively misroutes, because targets resolve to a
+directory — it sends `/draw` to your homepage.
+
+Then Activities → **Settings** → tick the platforms you want it to appear on,
+or it won't show in the shelf on that platform.
+
+### What has not been verified
+
+Everything reachable from outside Discord is tested: the framed-versus-public
+routing, the client id substitution, the SDK serving as JavaScript with its
+whole 69-module import graph resolving, the token endpoint's failure modes, and
+the intent lifecycle.
+
+**The handshake itself has never run.** `sdk.ready()`, `authorize()`,
+`authenticate()` and the `/.proxy` prefix can only be exercised inside a real
+Discord client, which no test here can do. Expect iteration.
+
+The likeliest thing to need changing: after authenticating, the frame
+**navigates** to the canvas or replay page. That reuses one implementation of
+drawing and guessing instead of maintaining two, but Discord documents
+Activities as single-page apps, and a navigation tears down the SDK connection.
+Nothing after that point needs the SDK, so it should be fine — but if the frame
+goes blank or reloads oddly, that navigation is the first thing to suspect, and
+the fix is to render those views in-page instead.
 
 ## Checks
 
@@ -154,8 +233,8 @@ a `None` cookie without `Secure` and nothing would work at all.
 npm run check
 ```
 
-Runs the page bundles, 122 unit tests, 103 DOM smoke checks across the spike
-and app pages, 32 schema checks against a live database, and a 57-step
+Runs the page bundles, 130 unit tests, 103 DOM smoke checks across the spike
+and app pages, 37 schema checks against a live database, and a 79-step
 end-to-end round over real HTTP with real Ed25519 signatures.
 
 ## Deploying

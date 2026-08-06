@@ -33,6 +33,7 @@ const {
   DISCORD_PUBLIC_KEY,
   DISCORD_BOT_TOKEN,
   DISCORD_APP_ID,
+  DISCORD_CLIENT_SECRET,
   PORT = 3000,
   PUBLIC_URL = `http://localhost:${PORT}`,
   DB_FILE
@@ -67,7 +68,18 @@ if (DB_FILE) {
 const store = openStore(DB_FILE);
 const words = JSON.parse(await readFile(join(root, "data", "words.json"), "utf8"));
 
-const ctx = { store, words, drawUrl: PUBLIC_URL, now: () => Date.now() };
+const ctx = {
+  store,
+  words,
+  drawUrl: PUBLIC_URL,
+  now: () => Date.now(),
+  /*
+   * Off by default. The link-out flow is the one that is tested end to end and
+   * known to work; the Activity has to be proven inside a real Discord client
+   * before it becomes the way everyone plays.
+   */
+  activityEnabled: process.env.ACTIVITY_ENABLED === "1"
+};
 
 // ---------------------------------------------------------------- helpers
 
@@ -143,6 +155,14 @@ const viewerOf = req =>
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  /*
+   * The vendored SDK ships as .mjs. Browsers enforce the MIME type strictly
+   * for module scripts and refuse to execute anything that isn't a JavaScript
+   * type — serving these as octet-stream fails only inside Discord, which is
+   * the worst place to discover it.
+   */
+  ".mjs": "text/javascript; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -165,6 +185,7 @@ const MIME = {
 const CACHE = {
   ".css":  "no-cache",
   ".js":   "no-cache",
+  ".mjs":  "no-cache",
   ".json": "no-cache",
   ".html": "no-cache",
   ".svg":  "public, max-age=86400",
@@ -339,6 +360,136 @@ async function handleWatchRoute(req, res, url) {
   json(res, 200, view);
 }
 
+// ---------------------------------------------------------------- activity
+
+/**
+ * Trades the OAuth code from inside an Activity for an identity.
+ *
+ * The Activity has no session token — nobody ran a slash command to mint one.
+ * Instead the iframe asks Discord to authorize it, gets back a short code, and
+ * posts it here. We exchange the code for an access token using the client
+ * secret (which never leaves the server), read who it belongs to, and hand
+ * back our own viewer cookie plus the access token the SDK needs to finish
+ * its own handshake.
+ */
+async function handleTokenRoute(req, res) {
+  if (!DISCORD_CLIENT_SECRET) {
+    console.error("DISCORD_CLIENT_SECRET is not set — the Activity cannot authenticate anyone.");
+    return json(res, 503, {
+      error: "This server isn't set up for Activities yet.",
+      detail: "DISCORD_CLIENT_SECRET is missing."
+    });
+  }
+
+  let body;
+  try {
+    body = JSON.parse((await readBody(req)).toString("utf8"));
+  } catch {
+    return json(res, 400, { error: "bad json" });
+  }
+
+  if (!body.code) return json(res, 400, { error: "no code" });
+
+  let token, user;
+  try {
+    /*
+     * Discord wants this form-encoded, not JSON — a mismatch here returns a
+     * bare "invalid_request" that says nothing about which field was wrong.
+     */
+    const res1 = await fetch("https://discord.com/api/v10/oauth2/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: DISCORD_APP_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code: body.code
+      })
+    });
+
+    token = await res1.json();
+
+    if (!res1.ok || !token.access_token) {
+      console.error("oauth exchange failed:", res1.status, token);
+      return json(res, 401, { error: "Couldn't verify you with Discord. Try reopening the app." });
+    }
+
+    const res2 = await fetch("https://discord.com/api/v10/users/@me", {
+      headers: { authorization: `Bearer ${token.access_token}` }
+    });
+    user = await res2.json();
+
+    if (!res2.ok || !user.id) {
+      console.error("could not read the user:", res2.status, user);
+      return json(res, 401, { error: "Couldn't verify you with Discord. Try reopening the app." });
+    }
+  } catch (err) {
+    console.error("oauth exchange threw:", err);
+    return json(res, 502, { error: "Discord didn't answer. Try again in a moment." });
+  }
+
+  /*
+   * The Activity tells us which channel it is running in. That is safe to
+   * trust for routing — it comes from Discord's own query parameters — but
+   * identity comes from the token exchange above, never from the frame.
+   */
+  const now = Date.now();
+  const session = await store.createViewerSession({
+    userId: user.id,
+    guildId: String(body.guildId ?? ""),
+    channelId: String(body.channelId ?? ""),
+    isModerator: false,   // re-established per round by publicView
+    issuedAt: now,
+    expiresAt: now + VIEWER_TTL_MS
+  });
+
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "set-cookie": viewerCookie(session, VIEWER_TTL_MS),
+    "cache-control": "no-store"
+  });
+
+  // access_token goes back so the SDK can call authenticate(); it is the
+  // user's own token and never touches our database.
+  res.end(JSON.stringify({
+    access_token: token.access_token,
+    user: { id: user.id, username: user.username, global_name: user.global_name }
+  }));
+}
+
+/** What the Activity should show: the drawing you pressed, or a fresh card. */
+async function handleActivityContextRoute(req, res, url) {
+  const viewer = await viewerOf(req);
+  if (!viewer) return json(res, 401, { error: "not signed in" });
+
+  const channelId = url.searchParams.get("channel_id") || viewer.channelId;
+  const intent = await store.getLaunchIntent(viewer.userId, channelId);
+
+  if (!intent || intent.kind === "draw") {
+    return json(res, 200, { kind: "draw" });
+  }
+
+  const round = await store.getRound(intent.roundId);
+  if (!round) return json(res, 200, { kind: "draw" });
+
+  json(res, 200, {
+    kind: "guess",
+    round: publicView(round, viewer.userId, { isModerator: viewer.isModerator })
+  });
+}
+
+/** "No thanks, deal me a word instead." */
+async function handleActivitySkipRoute(req, res) {
+  const viewer = await viewerOf(req);
+  if (!viewer) return json(res, 401, { error: "not signed in" });
+
+  let body = {};
+  try { body = JSON.parse((await readBody(req)).toString("utf8")); } catch { /* optional */ }
+
+  await store.clearLaunchIntent(viewer.userId, body.channelId || viewer.channelId);
+  json(res, 200, { ok: true });
+}
+
 /**
  * Trades the viewer cookie for a fresh drawing session.
  *
@@ -392,7 +543,17 @@ async function handleDrawSessionRoute(req, res) {
  */
 async function servePage(res, name, headers = {}) {
   try {
-    const html = await readFile(join(root, "app", name));
+    let html = await readFile(join(root, "app", name), "utf8");
+
+    /*
+     * The Activity needs the application id to construct the SDK. It is
+     * public — it is in every invite link — so substituting it here rather
+     * than in a build step costs nothing and keeps the page a plain file.
+     */
+    if (html.includes("__DISCORD_APP_ID__")) {
+      html = html.replaceAll("__DISCORD_APP_ID__", DISCORD_APP_ID ?? "");
+    }
+
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       // The link is single-use and the round state changes; never cache these.
@@ -567,6 +728,9 @@ const server = createServer(async (req, res) => {
     if (method === "GET"  && url.pathname === "/api/session")  return await handleSessionRoute(req, res, url);
     if (method === "POST" && url.pathname === "/api/submit")   return await handleSubmitRoute(req, res);
     if (method === "POST" && url.pathname === "/api/draw-session") return await handleDrawSessionRoute(req, res);
+    if (method === "POST" && url.pathname === "/api/token")        return await handleTokenRoute(req, res);
+    if (method === "GET"  && url.pathname === "/api/activity/context") return await handleActivityContextRoute(req, res, url);
+    if (method === "POST" && url.pathname === "/api/activity/skip")    return await handleActivitySkipRoute(req, res);
     if (method === "GET"  && url.pathname.startsWith("/api/watch/")) return await handleWatchRoute(req, res, url);
     if (method === "GET"  && url.pathname === "/health")       return json(res, 200, { ok: true });
 
@@ -575,7 +739,20 @@ const server = createServer(async (req, res) => {
     // `/` is the landing page, NOT the canvas. Someone who types the domain
     // should learn what the game is, not land on a drawing tool they have no
     // session for and cannot post from.
-    if (method === "GET"  && url.pathname === "/")             return await servePublicPage(res, "index.html");
+    /*
+     * Discord's Activity iframe loads the root of the mapped domain, and the
+     * root mapping's prefix cannot be changed. So `/` has to serve two
+     * different things.
+     *
+     * Discord appends its own query parameters when it opens the frame —
+     * frame_id is the reliable one — which is how we tell "an Activity is
+     * starting" from "somebody typed the domain into a browser".
+     */
+    if (method === "GET"  && url.pathname === "/") {
+      return url.searchParams.has("frame_id")
+        ? await servePage(res, "activity.html")
+        : await servePublicPage(res, "index.html");
+    }
     if (method === "GET"  && url.pathname === "/privacy")      return await servePublicPage(res, "privacy.html");
     if (method === "GET"  && url.pathname === "/terms")        return await servePublicPage(res, "terms.html");
 

@@ -227,6 +227,40 @@ CREATE INDEX IF NOT EXISTS viewer_sessions_expiry ON viewer_sessions (expires_at
 CREATE INDEX IF NOT EXISTS viewer_sessions_by_user
   ON viewer_sessions (user_id, last_seen_at DESC);
 
+-- ---------------------------------------------------------------- activity
+
+-- Why the Activity opened.
+--
+-- Discord launches an Activity in an iframe and tells it which channel and
+-- guild it is in, but NOT which button the person pressed. Pressing "Guess"
+-- on a specific drawing and opening the app fresh from the App Launcher look
+-- identical from inside the frame.
+--
+-- So the interaction handler writes down what was intended, and the Activity
+-- asks for it once it knows who it is talking to. Same shape as a view grant,
+-- with one difference: this is NOT single use. Reloading the Activity, or
+-- Discord re-creating the frame, should land you back on the same drawing
+-- rather than dumping you somewhere else — so it stays readable until it
+-- expires or the player deliberately moves on.
+CREATE TABLE IF NOT EXISTS activity_intents (
+  user_id       TEXT NOT NULL,
+  guild_id      TEXT NOT NULL,
+  channel_id    TEXT NOT NULL,
+
+  -- 'guess' arrives with a round; 'draw' is a fresh card.
+  kind          TEXT NOT NULL CHECK (kind IN ('draw', 'guess')),
+  round_id      TEXT REFERENCES rounds(id) ON DELETE CASCADE,
+
+  created_at    INTEGER NOT NULL,
+  expires_at    INTEGER NOT NULL,
+
+  -- One live intent per person per channel. Pressing a different button
+  -- replaces the last one rather than queueing behind it.
+  PRIMARY KEY (user_id, channel_id)
+);
+
+CREATE INDEX IF NOT EXISTS activity_intents_expiry ON activity_intents (expires_at);
+
 -- ---------------------------------------------------------------- scores
 
 -- Denormalised running totals. The source of truth is always guesses +

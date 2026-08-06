@@ -18,16 +18,23 @@ RUN apk add --no-cache tini
 WORKDIR /srv
 
 # package.json first so this layer caches independently of source changes.
-# --omit=dev skips jsdom, which is only needed to run the test suite.
 COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+
+# Dev dependencies ARE needed here, briefly: the build vendors Discord's
+# Embedded App SDK out of node_modules and into app/vendor/.
+RUN npm install --no-audit --no-fund
 
 COPY . .
 
-# spike/bundle.js and app/bundle.js are generated and gitignored, so a fresh
-# clone doesn't have them. Without this the canvas loads and immediately fails
-# on a missing script.
+# app/bundle.js and app/vendor/ are generated and gitignored, so a fresh clone
+# doesn't have them. Without this the canvas loads and fails on a missing
+# script, and the Activity page cannot find the SDK.
 RUN npm run build
+
+# The application has zero runtime dependencies — everything it uses ships
+# with Node — so once the build has taken what it needs, the whole of
+# node_modules can go. That is ~40 MB of jsdom and SDK source not shipped.
+RUN rm -rf node_modules
 
 # The database lives on a mounted volume. Created here so the directory exists
 # and is owned correctly even on the very first boot, before any volume is

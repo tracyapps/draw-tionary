@@ -292,11 +292,56 @@ export function openStore(file = join(root, "draw-tionary.db")) {
       return res.changes > 0;
     },
 
+    // ------------------------------------------------------------ activity
+
+    /*
+     * Records why the Activity is about to open. Pressing a different button
+     * replaces the previous intent, so the frame always reflects the last
+     * thing the player actually pressed.
+     */
+    async setLaunchIntent({ userId, guildId, channelId, kind, roundId = null, at, expiresAt }) {
+      q(`
+        INSERT INTO activity_intents
+          (user_id, guild_id, channel_id, kind, round_id, created_at, expires_at)
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(user_id, channel_id) DO UPDATE SET
+          guild_id = excluded.guild_id,
+          kind = excluded.kind,
+          round_id = excluded.round_id,
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at
+      `).run(userId, guildId, channelId, kind, roundId, at, expiresAt);
+    },
+
+    /** Readable more than once — a reload should not lose your place. */
+    async getLaunchIntent(userId, channelId, now = Date.now()) {
+      const row = q(
+        "SELECT * FROM activity_intents WHERE user_id = ? AND channel_id = ?"
+      ).get(userId, channelId);
+
+      if (!row || row.expires_at < now) return null;
+      return {
+        userId: row.user_id,
+        guildId: row.guild_id,
+        channelId: row.channel_id,
+        kind: row.kind,
+        roundId: row.round_id
+      };
+    },
+
+    /** Called when the player moves on — "no thanks, deal me a word instead". */
+    async clearLaunchIntent(userId, channelId) {
+      return q(
+        "DELETE FROM activity_intents WHERE user_id = ? AND channel_id = ?"
+      ).run(userId, channelId).changes > 0;
+    },
+
     async purgeExpiredSessions(now = Date.now()) {
-      const drawn  = q("DELETE FROM draw_sessions WHERE expires_at < ?").run(now).changes;
-      const grants = q("DELETE FROM view_grants WHERE expires_at < ?").run(now).changes;
-      const seen   = q("DELETE FROM viewer_sessions WHERE expires_at < ?").run(now).changes;
-      return drawn + grants + seen;
+      const drawn   = q("DELETE FROM draw_sessions WHERE expires_at < ?").run(now).changes;
+      const grants  = q("DELETE FROM view_grants WHERE expires_at < ?").run(now).changes;
+      const seen    = q("DELETE FROM viewer_sessions WHERE expires_at < ?").run(now).changes;
+      const intents = q("DELETE FROM activity_intents WHERE expires_at < ?").run(now).changes;
+      return drawn + grants + seen + intents;
     },
 
     // ------------------------------------------------------------ scores
