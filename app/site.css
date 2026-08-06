@@ -150,10 +150,23 @@ a:hover { color: #c3c9ff; }
 }
 
 .hero-head {
-  max-width: 20ch;
   margin-bottom: 36px;
 }
-.hero-head h1 { margin-bottom: 0; }
+
+/*
+ * The measure goes on the h1, not on its wrapper.
+ *
+ * `ch` resolves against the font-size of the element it is written on. On the
+ * wrapper that is the inherited 16px, so `20ch` came out around 160px and put
+ * every word on its own line. On the h1 it resolves against the headline's
+ * own clamped size, which is what "about 22 characters per line" actually
+ * means — and it stays right as the clamp scales the type down.
+ */
+.hero-head h1 {
+  max-width: 22ch;
+  margin-bottom: 0;
+  text-wrap: balance;   /* evens the last line up; ignored where unsupported */
+}
 
 .hero-body {
   display: grid;
