@@ -16,7 +16,7 @@
 
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { mkdirSync, accessSync, constants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
@@ -146,7 +146,31 @@ const MIME = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
-  ".png": "image/png"
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp"
+};
+
+/*
+ * Cache policy for static files.
+ *
+ * Nothing here has a content hash in its filename, so a long max-age would
+ * mean shipping a CSS change and having Cloudflare keep serving the old one
+ * for hours. `no-cache` does not mean "don't store" — it means "store it, but
+ * revalidate before reuse", which with an ETag costs a 304 and nothing else.
+ *
+ * Images are exempt because they change far less often than the code that
+ * references them, and a stale icon is not a broken page.
+ */
+const CACHE = {
+  ".css":  "no-cache",
+  ".js":   "no-cache",
+  ".json": "no-cache",
+  ".html": "no-cache",
+  ".svg":  "public, max-age=86400",
+  ".png":  "public, max-age=86400",
+  ".ico":  "public, max-age=86400",
+  ".webp": "public, max-age=86400"
 };
 
 // ---------------------------------------------------------------- discord api
@@ -472,7 +496,9 @@ async function servePublicPage(res, name) {
     const html = await readFile(join(root, "app", name));
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=300"
+      // Revalidate rather than hold for 5 minutes. These pages are small, and
+      // a stale landing page after a deploy is more annoying than a 304.
+      "cache-control": "no-cache"
     });
     res.end(html);
   } catch {
@@ -487,10 +513,32 @@ async function serveStatic(req, res, url) {
 
   if (!file.startsWith(root)) { res.writeHead(403).end("nope"); return; }
 
+  const ext = extname(file);
+
   try {
-    const data = await readFile(file);
-    res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
-    res.end(data);
+    /*
+     * A weak ETag from size and mtime. Enough to answer "has this changed
+     * since you last asked", which is all `no-cache` revalidation needs, and
+     * far cheaper than hashing the file on every request.
+     */
+    const info = await stat(file);
+    const etag = `W/"${info.size.toString(16)}-${info.mtimeMs.toString(36)}"`;
+
+    const headers = {
+      "content-type": MIME[ext] ?? "application/octet-stream",
+      "cache-control": CACHE[ext] ?? "no-cache",
+      etag,
+      "last-modified": info.mtime.toUTCString()
+    };
+
+    // Revalidation hit: the browser or the CDN already has this byte-for-byte.
+    if (req.headers["if-none-match"] === etag) {
+      res.writeHead(304, headers).end();
+      return;
+    }
+
+    res.writeHead(200, headers);
+    res.end(await readFile(file));
   } catch {
     res.writeHead(404).end("not found");
   }
@@ -501,29 +549,42 @@ async function serveStatic(req, res, url) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, PUBLIC_URL);
 
+  /*
+   * HEAD is GET without a body, and it is not optional.
+   *
+   * Link checkers, CDNs, uptime monitors and — the one that cost us an
+   * afternoon — URL validators routinely send HEAD first. Answering 405 makes
+   * a perfectly healthy page look broken to anything that asks politely
+   * before downloading.
+   *
+   * Node suppresses the response body for HEAD automatically, so routing it
+   * exactly like GET is both correct and enough.
+   */
+  const method = req.method === "HEAD" ? "GET" : req.method;
+
   try {
-    if (req.method === "POST" && url.pathname === "/interactions") return await handleInteractionsRoute(req, res);
-    if (req.method === "GET"  && url.pathname === "/api/session")  return await handleSessionRoute(req, res, url);
-    if (req.method === "POST" && url.pathname === "/api/submit")   return await handleSubmitRoute(req, res);
-    if (req.method === "POST" && url.pathname === "/api/draw-session") return await handleDrawSessionRoute(req, res);
-    if (req.method === "GET"  && url.pathname.startsWith("/api/watch/")) return await handleWatchRoute(req, res, url);
-    if (req.method === "GET"  && url.pathname === "/health")       return json(res, 200, { ok: true });
+    if (method === "POST" && url.pathname === "/interactions") return await handleInteractionsRoute(req, res);
+    if (method === "GET"  && url.pathname === "/api/session")  return await handleSessionRoute(req, res, url);
+    if (method === "POST" && url.pathname === "/api/submit")   return await handleSubmitRoute(req, res);
+    if (method === "POST" && url.pathname === "/api/draw-session") return await handleDrawSessionRoute(req, res);
+    if (method === "GET"  && url.pathname.startsWith("/api/watch/")) return await handleWatchRoute(req, res, url);
+    if (method === "GET"  && url.pathname === "/health")       return json(res, 200, { ok: true });
 
     // Pages before static, so /draw isn't mistaken for a file called "draw".
     //
     // `/` is the landing page, NOT the canvas. Someone who types the domain
     // should learn what the game is, not land on a drawing tool they have no
     // session for and cannot post from.
-    if (req.method === "GET"  && url.pathname === "/")             return await servePublicPage(res, "index.html");
-    if (req.method === "GET"  && url.pathname === "/privacy")      return await servePublicPage(res, "privacy.html");
-    if (req.method === "GET"  && url.pathname === "/terms")        return await servePublicPage(res, "terms.html");
+    if (method === "GET"  && url.pathname === "/")             return await servePublicPage(res, "index.html");
+    if (method === "GET"  && url.pathname === "/privacy")      return await servePublicPage(res, "privacy.html");
+    if (method === "GET"  && url.pathname === "/terms")        return await servePublicPage(res, "terms.html");
 
-    if (req.method === "GET"  && url.pathname === "/draw")         return await servePage(res, "draw.html");
-    if (req.method === "GET"  && url.pathname.startsWith("/watch/")) return await handleWatchPage(req, res, url);
+    if (method === "GET"  && url.pathname === "/draw")         return await servePage(res, "draw.html");
+    if (method === "GET"  && url.pathname.startsWith("/watch/")) return await handleWatchPage(req, res, url);
 
-    if (req.method === "GET")                                      return await serveStatic(req, res, url);
+    if (method === "GET")                                      return await serveStatic(req, res, url);
 
-    res.writeHead(405).end("method not allowed");
+    res.writeHead(405, { allow: "GET, HEAD, POST" }).end("method not allowed");
   } catch (err) {
     console.error(err);
     if (!res.headersSent) json(res, 500, { error: "server error" });

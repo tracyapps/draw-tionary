@@ -110,6 +110,67 @@ let token;
                          : bad("the canvas link was posted publicly");
 }
 
+// ---------------------------------------------------------------- HEAD
+
+{
+  /*
+   * HEAD is not optional. Link checkers, CDNs, uptime monitors and URL
+   * validators all send it before committing to a download, and answering 405
+   * makes a healthy page look broken to every one of them.
+   *
+   * Discord's Developer Portal refused this app's privacy policy URL for
+   * exactly this reason — same 405 on the custom domain and the platform
+   * domain, which is what ruled out DNS and made it obvious it was us.
+   */
+  for (const path of ["/", "/privacy", "/terms", "/draw", "/health"]) {
+    const res = await fetch(BASE + path, { method: "HEAD" });
+    res.ok
+      ? ok(`HEAD ${path} answers ${res.status}`)
+      : bad(`HEAD ${path} returned ${res.status} — link checkers will call this broken`);
+  }
+
+  const head = await fetch(`${BASE}/privacy`, { method: "HEAD" });
+  const body = await head.text();
+  body === ""
+    ? ok("HEAD sends headers with no body, as it should")
+    : bad("HEAD returned a body");
+
+  head.headers.get("content-type")?.startsWith("text/html")
+    ? ok("HEAD still reports the content type a validator is checking for")
+    : bad("HEAD dropped the content-type header");
+}
+
+// ---------------------------------------------------------------- caching
+
+{
+  /*
+   * Nothing is content-hashed, so a long max-age on CSS means shipping a
+   * change and having the CDN serve the old file for hours. That happened:
+   * a restyle went out and the site kept the previous stylesheet, which
+   * looked like broken layout rather than a caching problem.
+   */
+  const css = await fetch(`${BASE}/app/site.css`);
+  const cc  = css.headers.get("cache-control") ?? "";
+  const tag = css.headers.get("etag");
+
+  /no-cache/.test(cc)
+    ? ok("CSS is served no-cache, so a deploy is picked up immediately")
+    : bad(`CSS cache-control is "${cc}" — a stale stylesheet will outlive a deploy`);
+
+  tag ? ok("CSS carries an ETag so revalidation is a cheap 304")
+      : bad("no ETag on CSS — every revalidation refetches the whole file");
+
+  const again = await fetch(`${BASE}/app/site.css`, { headers: { "if-none-match": tag } });
+  again.status === 304
+    ? ok("an unchanged stylesheet revalidates to 304")
+    : bad(`expected 304 on revalidation, got ${again.status}`);
+
+  const png = await fetch(`${BASE}/app/icon/og.png`);
+  /max-age=\d\d\d\d/.test(png.headers.get("cache-control") ?? "")
+    ? ok("images are cached properly — they change far less than the code")
+    : bad("images are not cached");
+}
+
 // ---------------------------------------------------------------- public site
 
 {
