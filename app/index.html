@@ -44,40 +44,49 @@
 
 <main id="main">
 
-<div class="wrap">
-  <div class="hero">
-    <div>
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-head">
       <h1>Pictionary for friends who are never online at the same time.</h1>
-      <p class="lead">
-        Somebody draws a word. It lands in your channel. You guess it whenever
-        you next open Discord — on the bus, in a meeting you shouldn't be in,
-        at 2am. Nobody is waiting on you, and nobody is watching you draw.
-      </p>
-      <div class="actions">
-        <!-- Scopes and permissions are derived from what the bot actually
-             does: it posts one embed with buttons. Nothing more. -->
-        <a class="btn btn-primary"
-           href="https://discord.com/oauth2/authorize?client_id=1534509794096975962&permissions=18432&scope=bot%20applications.commands">
-          Add to Discord
-        </a>
-        <a class="btn" href="#how">See how it works</a>
-      </div>
     </div>
 
     <figure class="hero-figure">
-      <!--
-        A real drawing made in the real canvas. width/height match the file so
-        the browser reserves the space before it loads.
+      <div class="hero-body">
+        <!--
+          Image before the card in source order: on a narrow screen it should
+          read picture-then-pitch, and CSS grid reorders it on desktop without
+          the DOM having to lie about the reading order.
+        -->
+        <div class="hero-media">
+          <img class="hero-shot"
+               src="/app/img/hero.png"
+               width="828" height="568"
+               alt="A brown cat with a green collar, drawn in Draw-tionary, standing on a scribbled purple and pink floor beside a ball of yarn. The color palette and brush tools sit below the canvas.">
+        </div>
 
-        The alt text describes the drawing rather than the interface, because
-        the drawing is the argument: someone made a cat, with a collar, chasing
-        a ball of yarn, using a tool anyone can pick up.
-      -->
-      <img class="hero-shot"
-           src="/app/img/hero.png"
-           width="828" height="568"
-           alt="A brown cat with a green collar drawn in Draw-tionary, standing on a scribbled purple and pink floor beside a ball of yarn, with the color palette and brush tools below the canvas.">
-      <figcaption>Someone's cat. Drawn with a finger, in about four minutes.</figcaption>
+        <div class="hero-card">
+          <p class="lead">
+            Somebody draws a word. It lands in your channel. You guess it
+            whenever you next open Discord — on the bus, in a meeting you
+            shouldn't be in, at 2am. Nobody is waiting on you, and nobody is
+            watching you draw.
+          </p>
+          <div class="actions">
+            <!-- Scopes and permissions are derived from what the bot actually
+                 does: it posts one embed with buttons. Nothing more. -->
+            <a class="btn btn-primary"
+               href="https://discord.com/oauth2/authorize?client_id=1534509794096975962&permissions=18432&scope=bot%20applications.commands">
+              Add to Discord
+            </a>
+            <a class="btn" href="#how">See how it works</a>
+          </div>
+        </div>
+      </div>
+
+      <figcaption>
+        Scribbles thinks you would really enjoy this game. She would also like
+        some attention. Not that much. Okay, that's enough.
+      </figcaption>
     </figure>
   </div>
 </div>

@@ -132,16 +132,87 @@ a:hover { color: #c3c9ff; }
 
 /* ---------- hero ---------- */
 
+/*
+ * Headline runs full width across the top; below it the copy sits in a card
+ * that overlaps a large screenshot bleeding off the right edge.
+ *
+ * The screenshot is texture, not documentation — nobody needs to read the
+ * toolbar — so letting it run past the margin and sit partly under the card
+ * is fine, and reads better than a polite rectangle in a column.
+ */
+
 .hero {
-  display: grid;
-  grid-template-columns: 1.15fr .85fr;
-  gap: 48px;
-  align-items: center;
-  padding: 72px 0 60px;
+  /* `clip` rather than `hidden`: it stops the bleed causing a horizontal
+     scrollbar without turning this into a scroll container, which would
+     break the sticky header above it. */
+  overflow-x: clip;
+  padding: 64px 0 56px;
 }
 
-.hero h1 { margin-bottom: 16px; }
-.hero .lead { margin-bottom: 28px; }
+.hero-head {
+  max-width: 20ch;
+  margin-bottom: 36px;
+}
+.hero-head h1 { margin-bottom: 0; }
+
+.hero-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 44%) 1fr;
+  align-items: center;
+}
+
+/* The screenshot: bigger than its column, tilted, running off the margin. */
+.hero-media {
+  grid-column: 2;
+  grid-row: 1;
+  /* Pulls past the page gutter and off the viewport edge. */
+  margin-right: clamp(-10vw, -6vw, -2vw);
+  min-width: 0;
+}
+
+.hero-shot {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  transform: rotate(1.4deg);
+}
+
+/*
+ * The card. Sits in column one but reaches into column two so it laps over
+ * the screenshot's left edge.
+ */
+.hero-card {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 2;
+  margin-right: -72px;
+  padding: 28px 30px;
+  background: rgba(43, 45, 49, .92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .45);
+}
+
+.hero-card .lead { margin-bottom: 24px; color: var(--ink); }
+.hero-card .actions { margin-bottom: 0; }
+
+.hero-figure { margin: 0; }
+
+.hero-figure figcaption {
+  margin: 30px auto 0;
+  max-width: 54ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  text-align: center;
+  font-style: italic;
+}
 
 /*
  * The hero screenshot. width/height are set on the <img> itself so the browser
@@ -356,8 +427,35 @@ a:hover { color: #c3c9ff; }
 
 /* ---------- responsive ---------- */
 
+/*
+ * Below this the overlap stops working — the card would cover the drawing
+ * rather than lapping over its edge. So it unwinds: image first, card under
+ * it, nothing bleeding, nothing tilted.
+ */
 @media (max-width: 860px) {
-  .hero { grid-template-columns: 1fr; gap: 32px; padding-top: 44px; }
+  .hero { padding-top: 44px; }
+  .hero-head { max-width: none; margin-bottom: 26px; }
+
+  .hero-body { grid-template-columns: 1fr; }
+
+  .hero-media {
+    grid-column: 1;
+    grid-row: 1;
+    /* A smaller bleed still gives the sense of it running off the page. */
+    margin-right: -22px;
+  }
+
+  .hero-shot { transform: none; border-radius: 14px; }
+
+  .hero-card {
+    grid-column: 1;
+    grid-row: 2;
+    margin: -28px 0 0;   /* laps upward over the image instead of sideways */
+    padding: 24px 22px;
+  }
+
+  .hero-figure figcaption { margin-top: 24px; }
+
   section { padding: 48px 0; }
 }
 
