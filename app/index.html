@@ -64,11 +64,21 @@
       </div>
     </div>
 
-    <div class="art-slot">
-      <!-- Replace with a real screenshot or cover crop; keep the 16:9 box so
-           the page doesn't reflow when it loads. -->
-      Art slot — 16:9. A drawing mid-replay, or the cover art crop.
-    </div>
+    <figure class="hero-figure">
+      <!--
+        A real drawing made in the real canvas. width/height match the file so
+        the browser reserves the space before it loads.
+
+        The alt text describes the drawing rather than the interface, because
+        the drawing is the argument: someone made a cat, with a collar, chasing
+        a ball of yarn, using a tool anyone can pick up.
+      -->
+      <img class="hero-shot"
+           src="/app/img/hero.png"
+           width="828" height="568"
+           alt="A brown cat with a green collar drawn in Draw-tionary, standing on a scribbled purple and pink floor beside a ball of yarn, with the color palette and brush tools below the canvas.">
+      <figcaption>Someone's cat. Drawn with a finger, in about four minutes.</figcaption>
+    </figure>
   </div>
 </div>
 
@@ -272,6 +282,8 @@
     <nav aria-label="Footer">
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>
+      <a href="https://github.com/tracyapps/draw-tionary/issues" rel="noopener">Support</a>
+      <a href="https://github.com/tracyapps/draw-tionary" rel="noopener">Source</a>
       <a href="#add">Add to Discord</a>
     </nav>
   </div>
