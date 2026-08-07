@@ -312,7 +312,8 @@
   const toX = n => n * cssW;
   const toY = n => n * cssW;
 
-  const widthFor = (s, pressure) => Math.max(0.4, s.size * (0.45 + pressure * 1.1));
+  // s.size is a fraction of canvas width (see decode), so scale it back up.
+  const widthFor = (s, pressure) => Math.max(0.4, s.size * cssW * (0.45 + pressure * 1.1));
 
   function paintStroke(s, upTo) {
     const pts = s.pts;
@@ -614,10 +615,22 @@
   }
 
   function decode(drawing) {
-    // Wire format is the compact one the canvas sends: {c,w,e,p:[[x,y,p,t]]}
+    /*
+     * Wire format is the compact one the canvas sends: {c,w,e,p:[[x,y,p,t]]}
+     *
+     * `w` is a pixel width measured on the canvas the drawing was made on,
+     * whose size is recorded as drawing.width. Dividing by it gives a fraction
+     * of canvas width — the same units the coordinates already use — so the
+     * replay looks like the original at any size, on any screen.
+     *
+     * Without this the linework keeps its original pixel width while the
+     * geometry scales, and a drawing replayed on a wide screen turns spidery.
+     */
+    const from = drawing.width || 1;
+
     return (drawing.strokes ?? []).map(s => ({
       color: s.c,
-      size:  s.w,
+      size:  s.w / from,
       erase: !!s.e,
       pts:   (s.p ?? []).map(([x, y, p, t]) => ({ x, y, p, t }))
     }));

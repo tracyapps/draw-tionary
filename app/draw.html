@@ -590,6 +590,18 @@
    * Activity iframe replays correctly on a full-screen phone and vice versa.
    * y may exceed 1.0 on a tall canvas — that is expected and fine.
    */
+  /*
+   * `size` here is NORMALISED, like the coordinates: a fraction of the canvas
+   * width, not a pixel count.
+   *
+   * It has to be. Points are stored relative to width, so when the canvas
+   * resizes the geometry scales — but a stroke width kept in pixels does not,
+   * and the drawing changes character. Wide canvas: the same picture drawn
+   * with hairlines. Narrow canvas: the same picture drawn with a marker.
+   *
+   * Normalising both means a drawing looks like itself at any size, which is
+   * the whole reason the coordinates were normalised in the first place.
+   */
   const strokes = [];          // { color, size, erase, pts: [{x,y,p,t}] }
   let current   = null;
   let drawing   = false;
@@ -653,8 +665,9 @@
   const toY = n => n * cssW;
 
   function strokeWidthFor(s, pressure) {
-    // pressure 0.5 is the neutral default browsers report for finger/mouse
-    return Math.max(0.4, s.size * (0.45 + pressure * 1.1));
+    // s.size is a fraction of canvas width; multiply back up to paint.
+    // pressure 0.5 is the neutral default browsers report for finger/mouse.
+    return Math.max(0.4, s.size * cssW * (0.45 + pressure * 1.1));
   }
 
   /*
@@ -725,7 +738,9 @@
     cv.setPointerCapture(e.pointerId);
     if (!t0) t0 = performance.now();
 
-    current = { color, size, erase: tool === "eraser", pts: [] };
+    // The slider is in pixels because that is what a person can judge by eye.
+    // Store it relative to the canvas so it survives a resize.
+    current = { color, size: size / (cssW || 1), erase: tool === "eraser", pts: [] };
     strokes.push(current);
 
     addPoint(localPoint(e));
@@ -785,7 +800,14 @@
       v: 1,
       strokes: strokes.map(s => ({
         c: s.color,
-        w: s.size,
+        /*
+         * Written back out in pixels, at the canvas width recorded alongside
+         * it. That keeps the wire format exactly as it was, so every drawing
+         * already in the database still reads correctly — the reader divides
+         * by that width to get back to a fraction. Changing the format would
+         * have meant a migration for a bug that doesn't need one.
+         */
+        w: +(s.size * cssW).toFixed(2),
         e: s.erase ? 1 : 0,
         p: s.pts.map(p => [ +p.x.toFixed(4), +p.y.toFixed(4), +p.p.toFixed(2), p.t ])
       }))

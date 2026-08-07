@@ -520,6 +520,46 @@ function scribble(win, doc) {
     : bad("notice is not announced to assistive tech");
 }
 
+// ---- stroke width survives a resize ----
+
+{
+  /*
+   * Coordinates are stored relative to canvas width, so geometry rescales
+   * when the window changes. Stroke width used to be kept in pixels, which
+   * did not — so the same drawing became spidery on a wide canvas and
+   * marker-thick on a narrow one. Both have to be relative or neither.
+   */
+  const { win, doc, calls } = await loadApp();
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  click(win, [...$("cardOut").querySelectorAll("button.choice")][0]);
+  scribble(win, doc);
+  click(win, $("submit"));
+  await settle();
+
+  const posted = calls.find(c => c.url === "/api/submit");
+  const sent   = posted ? JSON.parse(posted.init.body) : {};
+  const stroke = sent.strokes?.[0];
+
+  stroke
+    ? ok("a stroke made it into the submitted payload")
+    : bad("no stroke to inspect");
+
+  /*
+   * The submitted width must still be a pixel measurement matching the
+   * recorded canvas width — that is the existing wire format, and changing
+   * it would strand every drawing already in the database.
+   */
+  typeof stroke?.w === "number" && stroke.w > 0.5 && stroke.w < 200
+    ? ok(`stroke width goes over the wire in pixels (${stroke.w}), format unchanged`)
+    : bad(`stroke width is not a plausible pixel value: ${stroke?.w}`);
+
+  sent.width > 0
+    ? ok("and the canvas width it was measured against travels with it")
+    : bad("no canvas width recorded — the reader cannot rescale the linework");
+}
+
 // ---- downloads inside the Discord Activity ----
 
 {
