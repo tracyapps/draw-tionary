@@ -34,8 +34,8 @@ if (!exported.length) {
 
 const body = gameSrc.replace(/^export\s+/gm, "");
 
-const out = `/* GENERATED FILE — do not edit.
- * Built from lib/game.js and data/words.json by tools/build-spike.js
+const bundle = withWords => `/* GENERATED FILE — do not edit.
+ * Built from lib/game.js${withWords ? " and data/words.json" : ""} by tools/build-spike.js
  * Run \`npm run build\` after changing either of those.
  */
 (function (global) {
@@ -44,21 +44,29 @@ const out = `/* GENERATED FILE — do not edit.
 ${body.split("\n").map(l => (l.trim() ? "  " + l : l)).join("\n")}
 
   global.Game = { ${exported.join(", ")} };
-  global.WORDS = ${words.trim()};
-})(typeof window !== "undefined" ? window : globalThis);
+${withWords ? `  global.WORDS = ${words.trim()};\n` : ""}})(typeof window !== "undefined" ? window : globalThis);
 `;
 
 /*
- * Both the spike and the real app get a copy. The app could import the module
- * properly — it is always served over HTTP — but shipping the same file to
- * both means there is exactly one thing to keep in step with lib/game.js.
+ * Both the spike and the real app get a copy of the rules. The app could
+ * import the module properly — it is always served over HTTP — but shipping
+ * the same file to both means there is exactly one thing to keep in step with
+ * lib/game.js.
+ *
+ * The word list is the exception, and only the spike gets it.
+ *
+ * The spike pages run off file:// with no server, so they have to deal their
+ * own cards. The app never does: cards come from the server, already dealt.
+ * Shipping the list anyway put every answer in the browser of every player —
+ * one look at the network tab and the game is over — and handed anyone who
+ * wanted to script the guess endpoint a ready-made dictionary.
  */
-for (const dir of ["spike", "app"]) {
+for (const [dir, withWords] of [["spike", true], ["app", false]]) {
   // mkdir because the container image excludes spike/ — the prototypes are
   // never served — and a missing directory should not fail the build.
   mkdirSync(join(root, dir), { recursive: true });
-  writeFileSync(join(root, dir, "bundle.js"), out);
-  console.log(`Wrote ${dir}/bundle.js`);
+  writeFileSync(join(root, dir, "bundle.js"), bundle(withWords));
+  console.log(`Wrote ${dir}/bundle.js${withWords ? " (with the word list)" : ""}`);
 }
 
 console.log(`  ${exported.length} functions: ${exported.join(", ")}`);

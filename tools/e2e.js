@@ -615,7 +615,7 @@ const answer = card.find(c => c.tier === "medium").word;
     : bad("summary leaked other people's play: " + JSON.stringify(stranger.you));
 }
 
-let secondRoundId;
+let secondRoundId, secondAnswer;
 {
   /*
    * Identity is a person, not a drawing. Being recognised on one replay has
@@ -638,6 +638,7 @@ let secondRoundId;
     })
   })).json();
   secondRoundId = submitted.roundId;
+  secondAnswer  = pick.word;
 
   const view = await (await fetch(`${BASE}/api/watch/${secondRoundId}`, asViewer(sarahCookie))).json();
 
@@ -648,6 +649,115 @@ let secondRoundId;
   view.word === undefined
     ? ok("carrying across rounds does not carry the answers with it")
     : bad("a cookie unlocked a round its owner had not solved");
+}
+
+// ---------------------------------------------------------------- guessing from the page
+
+/*
+ * The same act as the Discord modal, through the other door. Both end in
+ * recordGuess, so what matters here is the door: who the server thinks you
+ * are, what it refuses, and that nothing on the way in reveals the answer.
+ */
+{
+  const nap = ms => new Promise(r => setTimeout(r, ms));
+
+  const guess = (cookie, guessText, roundId = secondRoundId) =>
+    fetch(`${BASE}/api/guess`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ roundId, guess: guessText })
+    });
+
+  {
+    const res = await guess(null, secondAnswer);
+    res.status === 401
+      ? ok("a guess without a cookie is refused, however right it is")
+      : bad(`an anonymous guess was accepted: ${res.status}`);
+  }
+
+  {
+    const res  = await guess(sarahCookie, "definitely not the word");
+    const body = await res.json();
+
+    res.ok && body.correct === false
+      ? ok("a wrong guess from the page comes back as a wrong guess, not an error")
+      : bad("wrong guess mishandled: " + JSON.stringify(body));
+
+    !JSON.stringify(body).includes(secondAnswer)
+      ? ok("and the response says nothing about what the answer actually is")
+      : bad("the answer leaked in a wrong-guess response");
+  }
+
+  {
+    // Free to guess, but not free to be scripted: the word list is finite and
+    // isCorrect forgives typos, so a machine with no floor would walk it.
+    const res = await guess(sarahCookie, "another wrong one");
+    res.status === 429
+      ? ok("guesses fired back to back are throttled, so the list cannot be walked")
+      : bad(`expected a 429 on an instant retry, got ${res.status}`);
+  }
+
+  await nap(800);
+
+  {
+    const res  = await guess(sarahCookie, secondAnswer);
+    const body = await res.json();
+
+    res.ok && body.correct === true && body.word === secondAnswer
+      ? ok("the right answer from the page is accepted and the word revealed")
+      : bad("correct guess not accepted: " + JSON.stringify(body));
+
+    body.awarded > 0 && body.solverIndex === 0
+      ? ok("it scores, and knows they were first")
+      : bad("no score on a correct guess: " + JSON.stringify(body));
+  }
+
+  {
+    const view = await (await fetch(`${BASE}/api/watch/${secondRoundId}`, asViewer(sarahCookie))).json();
+    view.you?.solved === true && view.word === secondAnswer
+      ? ok("the solve is attributed to the cookie holder, not to anything the body claimed")
+      : bad("solve landed on the wrong person: " + JSON.stringify(view.you));
+  }
+
+  await nap(800);
+
+  {
+    const res  = await guess(sarahCookie, secondAnswer);
+    const body = await res.json();
+
+    res.status === 409 && /already/i.test(body.error ?? "")
+      ? ok("guessing a round you have already solved is refused, so it cannot be farmed")
+      : bad(`a second solve was allowed: ${res.status} ${JSON.stringify(body)}`);
+  }
+
+  {
+    // jonah drew this one. The drawer knows the word by definition.
+    const link = await watchLink(asUser("jonah"), secondRoundId);
+    const jonahCookie = (await redeem(link)).cookie;
+
+    const res  = await guess(jonahCookie, secondAnswer);
+    const body = await res.json();
+
+    res.status === 409
+      ? ok("the drawer cannot guess their own drawing from the page either")
+      : bad(`the drawer scored on their own round: ${res.status} ${JSON.stringify(body)}`);
+  }
+
+  await nap(800);
+
+  {
+    const res = await guess(sarahCookie, "   ", secondRoundId);
+    res.status === 400
+      ? ok("an empty guess is rejected before it becomes an attempt")
+      : bad(`whitespace was accepted as a guess: ${res.status}`);
+  }
+
+  {
+    const res = await guess(sarahCookie, "anything", "no-such-round");
+    res.status === 404
+      ? ok("a guess at a round that does not exist is a 404, not a crash")
+      : bad(`expected 404 for an unknown round, got ${res.status}`);
+  }
 }
 
 // ---------------------------------------------------------------- your turn

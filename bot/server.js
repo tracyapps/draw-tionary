@@ -23,7 +23,7 @@ import { dirname, join, extname, normalize } from "node:path";
 
 import { verifyRequest, isFresh } from "../lib/verify.js";
 import { handleInteraction, drawingPost, SESSION_TTL_MS } from "../lib/interactions.js";
-import { createRound, submitDrawing, publicView } from "../lib/rounds.js";
+import { createRound, submitDrawing, publicView, recordGuess, roundScores } from "../lib/rounds.js";
 import { dealCard } from "../lib/game.js";
 import { openStore } from "./store.js";
 
@@ -378,6 +378,124 @@ async function handleSubmitRoute(req, res) {
 
   json(res, 200, { ok: true, roundId, posted: true });
 }
+
+/*
+ * Guessing is deliberately unlimited — wrong guesses cost nothing, and that
+ * is a rule worth keeping. But "unlimited" over HTTP means a script can walk
+ * the whole word list in a second, and isCorrect forgives typos, so the
+ * margin for error is wide. A short floor between attempts leaves a person
+ * typing as fast as they like and makes a machine take longer than the round.
+ *
+ * Per user *and* round: someone with two drawings open is one person playing,
+ * not a suspect.
+ */
+const GUESS_MIN_GAP_MS = 750;
+const lastGuessAt = new Map();
+
+// Unbounded maps are how a small server becomes a memory leak nobody notices.
+setInterval(() => {
+  const cutoff = Date.now() - 60_000;
+  for (const [key, at] of lastGuessAt) if (at < cutoff) lastGuessAt.delete(key);
+}, 60_000).unref();
+
+/**
+ * A guess from the replay page.
+ *
+ * The same act as the Discord modal, through a different door — both land in
+ * recordGuess, so there is one set of rules about what counts, what scores,
+ * and who is allowed to try.
+ *
+ * Identity is the cookie and nothing else. The body names a round, never a
+ * player: trusting it would let anyone guess as anyone.
+ */
+async function handleGuessRoute(req, res) {
+  let body;
+  try {
+    body = JSON.parse((await readBody(req)).toString("utf8"));
+  } catch {
+    return json(res, 400, { error: "bad json" });
+  }
+
+  const viewer = await viewerOf(req);
+  if (!viewer) {
+    return json(res, 401, {
+      error: "I don't know who you are any more. Press Guess in Discord to start again."
+    });
+  }
+
+  const round = await store.getRound(body.roundId);
+  if (!round) return json(res, 404, { error: "That drawing is no longer around." });
+
+  const typed = String(body.guess ?? "").slice(0, 200);
+  if (!typed.trim()) return json(res, 400, { error: "Type something first." });
+
+  const key = viewer.userId + "|" + round.id;
+  const now = Date.now();
+  const since = now - (lastGuessAt.get(key) ?? 0);
+  if (since < GUESS_MIN_GAP_MS) {
+    return json(res, 429, {
+      error: "Slow down half a second and try that again.",
+      retryAfterMs: GUESS_MIN_GAP_MS - since
+    });
+  }
+  lastGuessAt.set(key, now);
+
+  const result = recordGuess(round, { userId: viewer.userId, guess: typed, at: now });
+
+  // canGuess said no — already solved, own drawing, hidden, removed. These are
+  // states the page should already be reflecting, so they read as a 409 rather
+  // than a failure of the request.
+  if (!result.ok) return json(res, 409, { error: result.error, reason: result.reason });
+
+  await store.saveRound(result.round);
+
+  if (!result.correct) {
+    return json(res, 200, { ok: true, correct: false, attempts: mineOn(result.round, viewer.userId) });
+  }
+
+  await store.applyScores(round.guildId, roundScores(result.round));
+
+  /*
+   * Announce it in the channel, because a solve nobody sees is half the game
+   * missing — the modal path posts publicly for the same reason.
+   *
+   * Best-effort on purpose: the points are already banked and the page is
+   * about to say so. A bot that cannot post (no token in development, a
+   * missing permission in production) must not turn a correct answer into an
+   * error message.
+   */
+  if (round.channelId) {
+    try {
+      await discord(`/channels/${round.channelId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          content:
+            `<@${viewer.userId}> got it — **${round.word}** — for **${result.awarded}** points.` +
+            (result.solverIndex === 0 ? " First to crack it." : ""),
+          allowed_mentions: { parse: [] }
+        })
+      });
+    } catch (err) {
+      console.error(`could not announce a solve on round ${round.id}:`, err.message);
+    }
+  }
+
+  json(res, 200, {
+    ok: true,
+    correct: true,
+    word: round.word,
+    awarded: result.awarded,
+    base: result.score.base,
+    bonus: result.score.bonus,
+    solverIndex: result.solverIndex,
+    solverCount: result.round.solvers.length,
+    attempts: mineOn(result.round, viewer.userId)
+  });
+}
+
+/** How many goes this person has had, which is the bit worth celebrating. */
+const mineOn = (round, userId) =>
+  round.guesses.filter(g => g.userId === userId).length;
 
 /**
  * Anyone can watch a replay; the answer is withheld unless they've earned it.
@@ -811,6 +929,7 @@ const server = createServer(async (req, res) => {
     if (method === "GET"  && url.pathname === "/api/session")  return await handleSessionRoute(req, res, url);
     if (method === "POST" && url.pathname === "/api/submit")   return await handleSubmitRoute(req, res);
     if (method === "POST" && url.pathname === "/api/draw-session") return await handleDrawSessionRoute(req, res);
+    if (method === "POST" && url.pathname === "/api/guess")    return await handleGuessRoute(req, res);
     if (method === "POST" && url.pathname === "/api/token")        return await handleTokenRoute(req, res);
     if (method === "GET"  && url.pathname === "/api/activity/context") return await handleActivityContextRoute(req, res, url);
     if (method === "POST" && url.pathname === "/api/activity/skip")    return await handleActivitySkipRoute(req, res);

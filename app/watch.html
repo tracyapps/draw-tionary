@@ -224,6 +224,72 @@
     clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
 
+  /* ---------- guessing ---------- */
+
+  /*
+   * The boxes above are a picture of the word, not a field — there is one
+   * real input and it lives here. Two reasons it is not twelve little boxes:
+   * a screen reader meets one labelled control instead of announcing twelve,
+   * and a phone keyboard stays put instead of closing between letters.
+   *
+   * Clicking the boxes focuses this, because a row of empty boxes looks
+   * exactly like somewhere you type and people quite reasonably try.
+   */
+  #guessPanel {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: var(--panel-2);
+    border-top: 1px solid var(--line);
+  }
+  #guessPanel[hidden] { display: none; }
+
+  #guessForm { display: contents; }
+
+  #guessLabel { font-size: 14px; font-weight: 600; }
+
+  #answer {
+    flex: 1 1 200px;
+    min-width: 0;
+    font: 600 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* 16px keeps iOS from zooming the whole page on focus. */
+    letter-spacing: .12em;
+    color: var(--ink);
+    background: var(--panel);
+    /*
+     * --line is what every other border on this page uses, and against the
+     * panel it lands at 1.2:1 — invisible, which is how somebody ends up
+     * clicking the decorative boxes instead. A control's own boundary needs
+     * 3:1 to count as visible (WCAG 1.4.11); --ink-dim gives 4.5:1.
+     */
+    border: 1px solid var(--ink-dim);
+    border-radius: var(--radius);
+    /* Comfortably past the 44px minimum target on a phone. */
+    padding: 13px 12px;
+  }
+  #answer::placeholder { color: var(--ink-dim); letter-spacing: normal; }
+  #answer:disabled { opacity: .5; }
+
+  #guessGo { font-size: 14px; font-weight: 600; padding: 13px 20px; }
+
+  #guessHelp {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+  /* Wrong answers are not errors — nothing was lost and nothing is broken. */
+  #guessHelp.wrong { color: #ffd479; }
+
+  #shape.typable { cursor: text; }
+
+  @media (max-width: 640px) {
+    #guessGo { width: 100%; }
+  }
+
   @media (max-width: 640px) {
     #shape .box { width: 17px; }
     .bar { gap: 8px; }
@@ -252,6 +318,20 @@
 
   <button id="play" class="primary">Watch it draw</button>
   <button id="still">Show the finished drawing</button>
+</div>
+
+<div id="guessPanel" hidden>
+  <form id="guessForm" novalidate>
+    <!-- Visible, not a placeholder. A placeholder vanishes the moment you
+         type, which is exactly when you might want to check what it said. -->
+    <label id="guessLabel" for="answer">Your guess</label>
+    <input id="answer" type="text" name="answer"
+           autocomplete="off" autocorrect="off" autocapitalize="none"
+           spellcheck="false" enterkeyhint="send"
+           aria-describedby="guessHelp">
+    <button id="guessGo" class="primary" type="submit">Guess</button>
+  </form>
+  <p id="guessHelp"></p>
 </div>
 
 <div id="you" hidden>
@@ -528,6 +608,160 @@
     $("you").hidden = !text.textContent && !you.awarded;
   }
 
+  // ---------------------------------------------------------------- guessing
+
+  /*
+   * One field, not one per letter.
+   *
+   * The boxes are a picture of the shape; what you type goes into a single
+   * input and gets mirrored back into them. Per-letter inputs look tidy and
+   * behave badly: a screen reader announces twelve controls for one answer,
+   * backspace has to be re-invented, paste lands in one box, and a phone
+   * keyboard flickers shut on every keystroke.
+   *
+   * Punctuation and spacing are already on the board, so only letters count.
+   * The server is forgiving about the rest anyway — same normalise() the
+   * Discord modal has always used.
+   */
+  function mirrorLetters() {
+    if (!view?.mask || view.word) return;
+
+    const typed = window.Game?.sanitiseLetters
+      ? window.Game.sanitiseLetters($("answer").value, view.mask)
+      : "";
+
+    const boxes = $("shape").querySelectorAll(".box");
+    boxes.forEach((box, i) => {
+      const ch = typed[i] ?? "";
+      box.textContent = ch.toUpperCase();
+      box.classList.toggle("filled", !!ch);
+    });
+  }
+
+  /** Wrong guesses cost nothing, so this reads as news rather than an error. */
+  function guessNote(text, wrong = false) {
+    $("guessHelp").textContent = text;
+    $("guessHelp").classList.toggle("wrong", wrong);
+  }
+
+  const shapeHint = mask =>
+    window.Game?.describeMask ? window.Game.describeMask(mask) : "";
+
+  function openGuessing() {
+    if (!view?.canGuess) return;
+
+    $("guessPanel").hidden = false;
+    $("answer").maxLength = Math.max(
+      (window.Game?.letterCount ? window.Game.letterCount(view.mask) : 24) + 8, 12
+    );
+    guessNote(shapeHint(view.mask) + " Wrong guesses cost nothing.");
+
+    /*
+     * Not autofocused. The replay starts on load and taking focus would drop a
+     * screen reader user into a text field before they have heard what page
+     * they are on. Clicking the boxes gets you here instead, which is what
+     * people try first anyway.
+     */
+    $("shape").classList.add("typable");
+  }
+
+  function closeGuessing() {
+    $("guessPanel").hidden = true;
+    $("shape").classList.remove("typable");
+  }
+
+  /*
+   * A correct answer changes three things at once — the word is revealed, the
+   * solver count moves, and the panel becomes a score. Doing it here rather
+   * than reloading keeps the replay on screen, which is the whole reason
+   * guessing moved out of the modal.
+   */
+  function onSolved(body) {
+    view.word = body.word;
+    view.canGuess = false;
+    view.solverCount = body.solverCount ?? view.solverCount + 1;
+
+    revealWord(body.word);
+    closeGuessing();
+
+    $("solvers").textContent = view.solverCount +
+      (view.solverCount === 1 ? " person has got it" : " people have got it");
+
+    renderYou({
+      isDrawer: false,
+      solved: true,
+      attempts: body.attempts,
+      awarded: body.awarded,
+      solverIndex: body.solverIndex
+    });
+    renderCta(view.canStartDrawing);
+
+    const bonus = body.bonus ? `, including ${body.bonus} for being early` : "";
+    say(`Correct. The word was ${body.word}. You earned ${body.awarded} points${bonus}.`);
+  }
+
+  async function submitGuess(event) {
+    event.preventDefault();
+
+    const input = $("answer");
+    const typed = input.value.trim();
+    if (!typed) {
+      guessNote("Type something first.");
+      input.focus();
+      return;
+    }
+
+    const btn = $("guessGo");
+    input.disabled = btn.disabled = true;
+    guessNote("Checking…");
+
+    let res, body;
+    try {
+      res  = await fetch("/api/guess", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ roundId: view?.id ?? roundIdFromPath(), guess: typed })
+      });
+      body = await res.json().catch(() => ({}));
+    } catch {
+      input.disabled = btn.disabled = false;
+      guessNote("Couldn't reach the server. Try that again?");
+      say("Couldn't reach the server.");
+      return;
+    }
+
+    input.disabled = btn.disabled = false;
+
+    if (res.status === 429) {
+      guessNote(body.error ?? "Slow down a moment.");
+      say(body.error ?? "Too fast — try again in a second.");
+      return;
+    }
+
+    if (!res.ok) {
+      // 409 means the round moved on without us — solved elsewhere, hidden,
+      // removed. The panel is now lying, so retire it.
+      closeGuessing();
+      $("msg").hidden = true;
+      guessNote(body.error ?? "That guess couldn't be counted.");
+      $("guessPanel").hidden = false;
+      $("guessForm").hidden = true;
+      say(body.error ?? "That guess couldn't be counted.");
+      return;
+    }
+
+    if (body.correct) return onSolved(body);
+
+    /*
+     * Left in the field and selected, because a wrong guess is usually nearly
+     * right — typing replaces it, and one keystroke fixes a typo.
+     */
+    guessNote(`“${typed}” isn't it — nothing lost, have another.`, true);
+    say(`${typed} isn't it. Guess again.`);
+    input.focus();
+    input.select();
+  }
+
   /** Works even when the round couldn't be loaded, so the CTA still functions. */
   const roundIdFromPath = () => location.pathname.split("/").filter(Boolean).pop();
 
@@ -597,6 +831,14 @@
   }
 
   $("yourTurn").addEventListener("click", startDrawing);
+  $("guessForm").addEventListener("submit", submitGuess);
+  $("answer").addEventListener("input", mirrorLetters);
+
+  // The boxes are the thing that looks like a field, so make them behave like
+  // a label for the one that is.
+  $("shape").addEventListener("click", () => {
+    if (!$("guessPanel").hidden) $("answer").focus();
+  });
 
   // ---------------------------------------------------------------- load
 
@@ -685,6 +927,7 @@
 
     renderYou(view.you);
     renderCta(view.canStartDrawing);
+    openGuessing();
 
     fit();
     if (stillPreferred) showStill();

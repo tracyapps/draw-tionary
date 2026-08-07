@@ -704,7 +704,7 @@ const DRAWING = {
  * here to stub. `canStartDrawing` in the payload is how the page learns
  * whether the server recognised it.
  */
-const loadWatch = (body, code = 200, { draw } = {}) => {
+const loadWatch = (body, code = 200, { draw, guess } = {}) => {
   const calls = [];
 
   return load("watch.html", {
@@ -715,6 +715,8 @@ const loadWatch = (body, code = 200, { draw } = {}) => {
       if (String(url).startsWith("/api/watch/"))    return reply(code, body);
       if (String(url) === "/api/draw-session")      return reply(draw?.code ?? 200,
                                                                 draw?.body ?? { url: "/draw?t=NEW" });
+      if (String(url) === "/api/guess")             return reply(guess?.code ?? 200,
+                                                                guess?.body ?? { ok: true, correct: false, attempts: 1 });
       return reply(404, { error: "unexpected " + url });
     }
   }).then(r => ({ ...r, calls }));
@@ -754,6 +756,141 @@ const loadWatch = (body, code = 200, { draw } = {}) => {
   $("solvers").textContent.includes("2 people")
     ? ok("watch page reports how many people have got it")
     : bad("solver count missing: " + $("solvers").textContent);
+}
+
+// ---- guessing from the replay page ----
+
+/*
+ * The bug these exist to prevent: the page showed a row of empty letter boxes
+ * and nothing to type into, because the boxes are role="img". People clicked
+ * them, nothing happened, and there was no way to play.
+ */
+const GUESSABLE = {
+  id: "round-1", status: "open", tier: "medium", points: 20,
+  mask: MASK, solverCount: 0, drawing: DRAWING,
+  canGuess: true, canStartDrawing: true
+};
+
+{
+  const { doc, win } = await loadWatch(GUESSABLE);
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  $("guessPanel").hidden === false
+    ? ok("someone who may guess is given somewhere to do it")
+    : bad("the guess panel never appeared for a guessable round");
+
+  const input = $("answer");
+  const label = doc.querySelector('label[for="answer"]');
+
+  input && input.tagName === "INPUT" && label
+    ? ok("the guess field is a real labelled input, not a row of styled boxes")
+    : bad("no labelled text input on the replay page");
+
+  // A placeholder disappears the moment you type, so it cannot be the label.
+  label && !label.classList.contains("sr-only") && label.textContent.trim()
+    ? ok("the label is visible, not a placeholder that vanishes on the first keystroke")
+    : bad("the guess field has no visible label");
+
+  // The reported symptom, as a test: clicking the boxes has to reach the field.
+  $("shape").dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  doc.activeElement === input
+    ? ok("clicking the letter boxes focuses the field, because that is what people try")
+    : bad("clicking the letter boxes still does nothing");
+
+  // Typing fills the boxes, so the shape stays the thing you are looking at.
+  input.value = "the cat";
+  input.dispatchEvent(new win.Event("input", { bubbles: true }));
+
+  doc.querySelectorAll("#shape .box.filled").length === 6
+    ? ok("typing mirrors into the letter boxes")
+    : bad("typed letters never reached the boxes");
+
+  [...doc.querySelectorAll("#shape .box")].map(b => b.textContent).join("") === "THECAT"
+    ? ok("punctuation and spacing are skipped — only letters take a slot")
+    : bad("letters landed in the wrong slots");
+}
+
+{
+  const { doc, win } = await loadWatch(GUESSABLE, 200, {
+    guess: { body: { ok: true, correct: false, attempts: 1 } }
+  });
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  $("answer").value = "a dog";
+  $("guessForm").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+  await settle();
+  await settle();
+
+  /isn't it/i.test($("guessHelp").textContent)
+    ? ok("a wrong guess says so without treating it as an error")
+    : bad("wrong guess gave no feedback: " + $("guessHelp").textContent);
+
+  $("guessPanel").hidden === false && $("answer").disabled === false
+    ? ok("and leaves you able to guess again straight away")
+    : bad("a wrong guess locked the player out");
+
+  $("answer").value === "a dog"
+    ? ok("the wrong guess is left in the field, because it is usually nearly right")
+    : bad("the field was cleared, so a one-letter typo means retyping it all");
+
+  doc.querySelectorAll("#shape .box.filled").length !== 6 || $("shape").textContent !== "THECAT"
+    ? ok("a wrong guess reveals nothing about the answer")
+    : bad("the answer leaked on a wrong guess");
+}
+
+{
+  const { doc, win } = await loadWatch(GUESSABLE, 200, {
+    guess: {
+      body: {
+        ok: true, correct: true, word: "the cat", awarded: 26,
+        base: 20, bonus: 6, solverIndex: 0, solverCount: 1, attempts: 2
+      }
+    }
+  });
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  $("answer").value = "the cat";
+  $("guessForm").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+  await settle();
+  await settle();
+
+  doc.querySelectorAll("#shape .box.filled").length === 6
+    ? ok("a correct guess reveals the word in place, without a reload")
+    : bad("the word was not revealed after solving");
+
+  $("guessPanel").hidden === true
+    ? ok("and retires the field, because there is nothing left to guess")
+    : bad("the guess field survived the answer");
+
+  /26/.test($("youScore").textContent) && $("youScore").hidden === false
+    ? ok("the score lands on screen")
+    : bad("no score shown after solving: " + $("youScore").textContent);
+
+  $("solvers").textContent.includes("1 person")
+    ? ok("the solver count moves without a round trip")
+    : bad("solver count stale after solving: " + $("solvers").textContent);
+
+  /the cat/.test($("status").textContent) && /26/.test($("status").textContent)
+    ? ok("and the whole result is announced to screen readers")
+    : bad("solving was silent for anyone not looking: " + $("status").textContent);
+}
+
+{
+  // A stranger sent the link can watch, but publicView tells them they cannot
+  // guess — so they are not handed a field that would 401 the moment they use it.
+  const { doc } = await loadWatch({
+    id: "round-1", status: "open", tier: "medium", points: 20,
+    mask: MASK, solverCount: 0, drawing: DRAWING,
+    canGuess: false, canStartDrawing: false
+  });
+  await settle();
+
+  doc.getElementById("guessPanel").hidden === true
+    ? ok("someone who cannot guess is not offered a field that would fail")
+    : bad("the guess panel was shown to someone who cannot use it");
 }
 
 // ---- the answer is only shown when the server sends it ----
