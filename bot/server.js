@@ -855,6 +855,19 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`  public url: ${PUBLIC_URL}`);
   console.log(`  interactions endpoint: ${PUBLIC_URL}/interactions`);
   console.log(`  database: ${DB_FILE ?? "(default, beside the source)"}`);
+
+  /*
+   * Print what survived the restart. If these numbers reset to zero after a
+   * deploy, the database is not on a persistent volume — which looks exactly
+   * like a working server until somebody presses a button on yesterday's
+   * drawing and is told it no longer exists.
+   */
+  store.stats().then(s => {
+    console.log(`  contents: ${s.posted} posted drawings, ${s.guesses} guesses, ${s.players} players`);
+    if (s.rounds === 0) {
+      console.log("            (empty — expected on a first run, a warning on any other)");
+    }
+  }).catch(err => console.error("  could not read the database:", err.message));
   if (!DISCORD_BOT_TOKEN) console.log("  (DISCORD_BOT_TOKEN unset — channel posting disabled)");
   if (PUBLIC_URL.startsWith("http://") && process.env.NODE_ENV === "production") {
     console.warn("  WARNING: PUBLIC_URL is http. The viewer cookie will not be Secure,");

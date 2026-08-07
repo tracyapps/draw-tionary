@@ -420,8 +420,20 @@ the next deploy wipes it.
 `bot/server.js` checks the directory is writable at startup and refuses to
 boot if it isn't, so a genuinely unmounted volume fails the deploy loudly. But
 it cannot tell a mounted `/data` from an unmounted one that happens to be
-writable — so confirm the mount path and `DB_FILE` agree. Deploy twice and
-check your scores survived; that's the real test.
+writable — both look identical while the server runs.
+
+So the startup log prints what survived:
+
+```
+  database: /data/draw-tionary.db
+  contents: 4 posted drawings, 11 guesses, 3 players
+```
+
+**Compare that line across two consecutive deploys.** If the numbers reset to
+zero, the volume is not persisting and every drawing is being thrown away on
+each deploy. The symptom in Discord is a button on an older drawing replying
+"That drawing is no longer around" — which reads like the round was deleted
+rather than like the database was.
 
 ### Later, when you outgrow this
 

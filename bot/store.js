@@ -144,6 +144,25 @@ export function openStore(file = join(root, "draw-tionary.db")) {
       return round;
     },
 
+    /*
+     * A count of what is actually in the database, logged at boot.
+     *
+     * This is the only practical way to tell a properly mounted volume from a
+     * writable directory on the container's own disk. Both look identical
+     * while the server runs; the difference only shows up as everything
+     * silently vanishing on the next deploy. Printing the totals at startup
+     * turns that into something you can see in two consecutive deploy logs.
+     */
+    async stats() {
+      const one = sql => q(sql).get().n;
+      return {
+        rounds:  one("SELECT COUNT(*) n FROM rounds"),
+        posted:  one(`SELECT COUNT(*) n FROM rounds WHERE status <> 'drafting'`),
+        guesses: one("SELECT COUNT(*) n FROM guesses"),
+        players: one("SELECT COUNT(*) n FROM scores")
+      };
+    },
+
     async setMessageId(roundId, messageId) {
       q("UPDATE rounds SET message_id = ? WHERE id = ?").run(messageId, roundId);
     },
