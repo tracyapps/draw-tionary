@@ -15,6 +15,8 @@
     "//dev": "Same as start, but reads .env. Hosts inject real environment variables, so --env-file must not be in `start` — the file doesn't exist there.",
     "dev": "node --env-file=.env --experimental-sqlite bot/server.js",
     "register": "node --env-file=.env bot/register-commands.js",
+    "//doctor": "Read-only. Asks Discord what the bot was actually granted, per channel, and prints it.",
+    "doctor": "node --env-file=.env bot/doctor.js",
     "app:urls": "node --env-file=.env tools/app-urls.js"
   },
   "devDependencies": {

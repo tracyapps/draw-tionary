@@ -341,7 +341,7 @@ async function handleSubmitRoute(req, res) {
 
   // Post it to the channel the /draw command came from.
   try {
-    const post = drawingPost(round);
+    const post = drawingPost(round, { baseUrl: PUBLIC_URL });
     const msg = await discord(`/channels/${session.channelId}/messages`, {
       method: "POST",
       body: JSON.stringify(post)
