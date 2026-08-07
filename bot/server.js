@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, extname, normalize } from "node:path";
 
 import { verifyRequest, isFresh } from "../lib/verify.js";
-import { handleInteraction, drawingPost, SESSION_TTL_MS } from "../lib/interactions.js";
+import { handleInteraction, drawingPost, solvePost, SESSION_TTL_MS } from "../lib/interactions.js";
 import { createRound, submitDrawing, publicView, recordGuess, roundScores } from "../lib/rounds.js";
 import { dealCard } from "../lib/game.js";
 import { openStore } from "./store.js";
@@ -311,8 +311,14 @@ class DiscordError extends Error {
     super(`Discord ${path} → ${status}${hint ? ` (${hint})` : ""} ${body}`);
     this.status = status;
     this.hint = hint;
+    this.body = body;
+    // Discord's own error code, which is far more specific than the status.
+    // 160004 is "a thread already exists for this message" — an expected
+    // answer here, not a failure.
+    try { this.code = JSON.parse(body)?.code ?? null; } catch { this.code = null; }
   }
 }
+
 
 async function discord(path, init = {}) {
   if (!DISCORD_BOT_TOKEN) {
@@ -552,21 +558,16 @@ async function handleGuessRoute(req, res) {
    * missing permission in production) must not turn a correct answer into an
    * error message.
    */
-  if (round.channelId) {
-    try {
-      await discord(`/channels/${round.channelId}/messages`, {
-        method: "POST",
-        body: JSON.stringify({
-          content:
-            `<@${viewer.userId}> got it — **${round.word}** — for **${result.awarded}** points.` +
-            (result.solverIndex === 0 ? " First to crack it." : ""),
-          allowed_mentions: { parse: [] }
-        })
-      });
-    } catch (err) {
-      console.error(`could not announce a solve on round ${round.id}:`, err.message);
-    }
-  }
+  /*
+   * result.round, not round. The whole point of the edit is that the count has
+   * gone up, and the pre-guess round still says it hasn't.
+   */
+  await announceSolve(result.round, {
+    userId: viewer.userId,
+    awarded: result.awarded,
+    solverIndex: result.solverIndex,
+    solverCount: result.round.solvers.length
+  });
 
   json(res, 200, {
     ok: true,
@@ -584,6 +585,50 @@ async function handleGuessRoute(req, res) {
 /** How many goes this person has had, which is the bit worth celebrating. */
 const mineOn = (round, userId) =>
   round.guesses.filter(g => g.userId === userId).length;
+
+/**
+ * Say publicly that somebody solved it. Two halves, deliberately.
+ *
+ * The drawing post is edited in place, so its own "N people have already
+ * solved it" line ticks up. That is the number you want at a glance, and it
+ * lives on the drawing rather than somewhere you have to go and count.
+ *
+ * Then a short reply names who just got it, because a running total is
+ * information and being named is the fun part.
+ *
+ * Both are best-effort and independent. The points are already banked and the
+ * page is about to say so, so neither a missing permission nor a deleted
+ * message may turn a correct answer into an error.
+ */
+async function announceSolve(round, payload) {
+  if (!round.channelId) return;
+
+  /*
+   * Rebuilt from the updated round, so the embed's solver count, the button
+   * row and the art all stay in step with one renderer. Editing only the
+   * description here would mean two places that write this post.
+   */
+  if (round.messageId) {
+    try {
+      const refreshed = drawingPost(round, { baseUrl: PUBLIC_URL });
+      await discord(`/channels/${round.channelId}/messages/${round.messageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ embeds: refreshed.embeds, components: refreshed.components })
+      });
+    } catch (err) {
+      console.warn(`could not refresh the count on round ${round.id}:`, err.message);
+    }
+  }
+
+  try {
+    await discord(`/channels/${round.channelId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(solvePost(round, payload))
+    });
+  } catch (err) {
+    console.error(`could not announce a solve on round ${round.id}:`, err.message);
+  }
+}
 
 /**
  * Anyone can watch a replay; the answer is withheld unless they've earned it.
@@ -1115,15 +1160,23 @@ server.listen(PORT, "0.0.0.0", () => {
     console.log(`  this database: ${age}, boot ${b.boots}`);
 
     /*
-     * Right on a genuine first deploy and wrong on nothing else. If the volume
-     * is not mounted, this is the line that says so — every single time, from
-     * the first deploy, instead of after someone loses a drawing.
+     * A first boot means one of two very different things, and which one
+     * depends on the mount check above. Saying "the volume is not persisting"
+     * directly underneath a line reading "is a mounted volume" is worse than
+     * saying nothing: two contradictory claims in the same block teach people
+     * to ignore both.
      */
     if (b.boots === 1 && PRODUCTION) {
-      console.warn("  WARNING: this database was created seconds ago.");
-      console.warn("           If you have deployed this app before, the volume is not");
-      console.warn("           persisting and every drawing is thrown away on each deploy.");
-      console.warn(`           Check that a volume is mounted at ${dirname(DB_FILE ?? ".")}.`);
+      if (dbMounted === true) {
+        // Mounted and empty. Almost always a volume attached minutes ago.
+        console.log("           (a new volume, or a wiped one — expected once. If the next");
+        console.log("            deploy also says boot 1, it is not persisting.)");
+      } else {
+        console.warn("  WARNING: this database was created seconds ago and is not on a volume.");
+        console.warn("           If you have deployed this app before, every drawing is being");
+        console.warn("           thrown away on each deploy.");
+        console.warn(`           Check that a volume is mounted at ${dirname(DB_FILE ?? ".")}.`);
+      }
     }
   }).catch(err => console.error("  could not stamp the database:", err.message));
 
