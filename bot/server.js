@@ -125,7 +125,16 @@ const secure = PUBLIC_URL.startsWith("https://");
  * plain http locally we fall back to Lax, because a browser would drop a
  * None cookie without Secure and the whole thing would silently not work.
  */
-const EMBEDDED = process.env.EMBEDDED_ACTIVITY === "1";
+/*
+ * ACTIVITY_ENABLED implies this. Turning the Activity on while leaving the
+ * cookie at Lax produces a failure that looks nothing like its cause: sign-in
+ * succeeds, the Set-Cookie comes back, and then every following request in the
+ * frame arrives anonymous — "not signed in" on a player who just signed in.
+ * EMBEDDED_ACTIVITY stays honoured on its own so the cookie can be switched
+ * ahead of the flag while testing.
+ */
+const EMBEDDED =
+  process.env.EMBEDDED_ACTIVITY === "1" || process.env.ACTIVITY_ENABLED === "1";
 const sameSite = EMBEDDED && secure ? "None" : "Lax";
 
 const parseCookies = header => Object.fromEntries(
@@ -872,6 +881,16 @@ server.listen(PORT, "0.0.0.0", () => {
   if (PUBLIC_URL.startsWith("http://") && process.env.NODE_ENV === "production") {
     console.warn("  WARNING: PUBLIC_URL is http. The viewer cookie will not be Secure,");
     console.warn("           and Discord requires https for an interactions endpoint.");
+  }
+  console.log(`  viewer cookie: SameSite=${sameSite}${secure ? "; Secure" : ""}${EMBEDDED && secure ? "; Partitioned" : ""}`);
+  /*
+   * The one combination that fails invisibly. Say so at boot rather than
+   * letting a player discover it.
+   */
+  if (EMBEDDED && !secure) {
+    console.warn("  WARNING: the Activity is on but PUBLIC_URL is not https, so the viewer");
+    console.warn("           cookie stays SameSite=Lax and will be dropped inside the frame.");
+    console.warn("           Players will sign in and then be told they are not signed in.");
   }
 });
 
