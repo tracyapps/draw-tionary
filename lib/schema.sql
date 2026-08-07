@@ -280,6 +280,27 @@ CREATE TABLE IF NOT EXISTS scores (
 CREATE INDEX IF NOT EXISTS scores_leaderboard
   ON scores (guild_id, points DESC);
 
+-- ---------------------------------------------------------------- install
+
+-- One row, written the first time this database is opened and never again.
+--
+-- It exists to answer one question from inside the container: is this the
+-- same database as last time? A SQLite file on an unmounted path works
+-- perfectly and vanishes on the next deploy, and nothing else about a running
+-- server can tell the two apart. If `boots` is 1 on a server that has been
+-- deployed before, the disk is not persisting.
+--
+-- Cheap to keep and it is the difference between noticing that on the first
+-- deploy and noticing it after someone loses a drawing they spent an hour on.
+CREATE TABLE IF NOT EXISTS install (
+  -- Always 1. A CHECK rather than a comment, so a second row cannot exist.
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  install_id    TEXT NOT NULL,
+  created_at    INTEGER NOT NULL,
+  boots         INTEGER NOT NULL DEFAULT 0,
+  last_boot_at  INTEGER NOT NULL
+);
+
 -- ---------------------------------------------------------------- retention
 
 -- Nothing here deletes itself. Two jobs are worth running:

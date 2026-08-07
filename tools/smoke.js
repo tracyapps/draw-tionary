@@ -558,6 +558,23 @@ function scribble(win, doc) {
   sent.width > 0
     ? ok("and the canvas width it was measured against travels with it")
     : bad("no canvas width recorded — the reader cannot rescale the linework");
+
+  /*
+   * The key names, pinned.
+   *
+   * Every drawing already in the database is stored in this exact shape, and
+   * the replay page reads it by these names. Renaming `c` to `color` in a
+   * tidy-up would be invisible in review, pass every other test here, and
+   * strand the entire archive. If this line ever needs changing, the change
+   * needs a migration next to it.
+   */
+  JSON.stringify(Object.keys(stroke ?? {}).sort()) === '["c","e","p","w"]'
+    ? ok("the stored stroke shape is exactly {c,w,e,p} — renaming a key strands the archive")
+    : bad("the wire format changed: " + JSON.stringify(Object.keys(stroke ?? {})));
+
+  Array.isArray(stroke?.p?.[0]) && stroke.p[0].length === 4
+    ? ok("and each point is still [x, y, pressure, t]")
+    : bad("point tuple changed shape: " + JSON.stringify(stroke?.p?.[0]));
 }
 
 // ---- downloads inside the Discord Activity ----
@@ -756,6 +773,42 @@ const loadWatch = (body, code = 200, { draw, guess } = {}) => {
   $("solvers").textContent.includes("2 people")
     ? ok("watch page reports how many people have got it")
     : bad("solver count missing: " + $("solvers").textContent);
+}
+
+// ---- an old drawing keeps working ----
+
+/*
+ * A drawing recorded on a 640-wide phone canvas, replayed on today's page.
+ *
+ * The promise the game makes is that your drawing stays there to come back
+ * to, so a change to the canvas or the styling has to leave the archive
+ * readable. Coordinates are fractions of canvas width and line widths are
+ * divided by the recorded width, which is what makes that true — this asserts
+ * it rather than trusting the comment that says so.
+ */
+{
+  const ARCHIVED = {
+    width: 640, height: 480, durationMs: 9000,
+    strokes: [
+      { c: "#ff0000", w: 3,  e: 0, p: [[0.05, 0.05, 0.4, 0], [0.9, 0.7, 0.6, 1200]] },
+      { c: "#000000", w: 24, e: 1, p: [[0.5, 0.5, 1, 2000], [0.55, 0.52, 1, 2400]] }
+    ]
+  };
+
+  const { doc, errors } = await loadWatch({
+    id: "round-old", status: "open", tier: "easy", points: 10,
+    mask: MASK, solverCount: 3, drawing: ARCHIVED
+  });
+  const $ = id => doc.getElementById(id);
+  await settle();
+
+  errors.length === 0 && $("board").hidden === false
+    ? ok("a drawing recorded on a different canvas size still replays today")
+    : bad("an archived drawing broke on the current page: " + errors.join(" | "));
+
+  $("msg").hidden === true
+    ? ok("and shows the drawing rather than an error where a drawing should be")
+    : bad("archived drawing fell back to a message: " + $("msg").textContent);
 }
 
 // ---- guessing from the replay page ----

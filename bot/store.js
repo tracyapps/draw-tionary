@@ -153,6 +153,29 @@ export function openStore(file = join(root, "draw-tionary.db")) {
      * silently vanishing on the next deploy. Printing the totals at startup
      * turns that into something you can see in two consecutive deploy logs.
      */
+    /*
+     * Stamps this boot and reports what the database remembers of previous
+     * ones. `boots === 1` means the file was created just now: either a
+     * genuine first run, or a disk that threw everything away.
+     */
+    async recordBoot(now = Date.now()) {
+      q(`
+        INSERT INTO install (id, install_id, created_at, boots, last_boot_at)
+        VALUES (1, ?, ?, 1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          boots = install.boots + 1,
+          last_boot_at = excluded.last_boot_at
+      `).run(randomUUID(), now, now);
+
+      const row = q("SELECT * FROM install WHERE id = 1").get();
+      return {
+        installId: row.install_id,
+        createdAt: row.created_at,
+        boots: row.boots,
+        ageMs: now - row.created_at
+      };
+    },
+
     async stats() {
       const one = sql => q(sql).get().n;
       return {

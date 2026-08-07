@@ -17,9 +17,9 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { mkdirSync, accessSync, constants } from "node:fs";
+import { mkdirSync, accessSync, statSync, readFileSync, constants } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, extname, normalize } from "node:path";
+import { dirname, join, resolve, extname, normalize } from "node:path";
 
 import { verifyRequest, isFresh } from "../lib/verify.js";
 import { handleInteraction, drawingPost, SESSION_TTL_MS } from "../lib/interactions.js";
@@ -50,6 +50,85 @@ if (!DISCORD_PUBLIC_KEY) {
  * looks healthy, and the drawings vanish at the next deploy. So check up front
  * that the directory exists and is writable, and refuse to start if it isn't.
  */
+const PRODUCTION = process.env.NODE_ENV === "production";
+
+/*
+ * Unset DB_FILE means the database is written beside the source — which in a
+ * container is inside the image, so every deploy starts from nothing. That is
+ * fine on a laptop and never fine on a host, and the failure is silent: the
+ * server is healthy, the game works, and yesterday's drawings are gone.
+ *
+ * There is no safe default to fall back to here, so this refuses rather than
+ * guesses. Losing an evening's drawings is worse than a deploy that stops and
+ * tells you why.
+ */
+if (!DB_FILE && PRODUCTION) {
+  console.error(
+    "DB_FILE is not set, so the database would be written inside the container\n" +
+    "and thrown away on the next deploy.\n\n" +
+    "  Railway: add a volume mounted at /data, then set DB_FILE=/data/draw-tionary.db\n" +
+    "  Fly:     fly volumes create data --size 1   (fly.toml already mounts it at /data)\n\n" +
+    "Refusing to start rather than quietly losing every drawing."
+  );
+  process.exit(1);
+}
+
+/**
+ * Is this directory a mounted volume, or just a folder in the image?
+ *
+ * "Writable" was never the right question. The Dockerfile creates /data so the
+ * first boot has somewhere to go, which means the directory exists and accepts
+ * writes whether or not a volume was ever attached — the two are
+ * indistinguishable by permissions, which is exactly how a database gets
+ * written into a container layer and thrown away on the next deploy.
+ *
+ * /proc/mounts lists every mount point the kernel knows about, so on Linux —
+ * which is every host this runs on — the question has a direct answer, on the
+ * first boot, rather than being inferred from yesterday's drawings being gone.
+ *
+ * Returns null when it cannot tell, which is not the same as false.
+ */
+function isMountPoint(dir) {
+  const target = resolve(dir);
+
+  try {
+    const mounts = readFileSync("/proc/mounts", "utf8")
+      .split("\n")
+      .map(line => line.split(" ")[1])
+      .filter(Boolean)
+      // Mount targets escape the awkward characters; spaces are the likely one.
+      .map(p => p.replace(/\\040/g, " ").replace(/\\011/g, "\t"));
+
+    if (mounts.length) return mounts.includes(target);
+  } catch { /* no procfs — a mac, probably. Fall through. */ }
+
+  /*
+   * Fallback for anywhere without /proc: a mount is a different filesystem,
+   * and a different filesystem usually has a different device number to its
+   * parent. Weaker — some sandboxes report the same st_dev either side of a
+   * real mount — so it is second, not first.
+   */
+  try {
+    return statSync(target).dev !== statSync(join(target, "..")).dev;
+  } catch {
+    return null;
+  }
+}
+
+const dbMounted = DB_FILE ? isMountPoint(dirname(DB_FILE)) : null;
+
+/*
+ * Writability, checked after the mount question rather than before it, because
+ * the answer changes what "not writable" means.
+ *
+ * An unmounted directory that cannot be written is a broken path. A *mounted*
+ * volume that cannot be written is the opposite problem — the volume arrived,
+ * and the container is running as a user it does not belong to. Railway mounts
+ * volumes as root, and this image deliberately runs as `node`, so attaching a
+ * volume for the first time turns a working deploy into a failing one unless
+ * RAILWAY_RUN_UID=0 goes on with it. Saying that here is the difference
+ * between a two-minute fix and an evening.
+ */
 if (DB_FILE) {
   const dir = dirname(DB_FILE);
   try {
@@ -57,9 +136,18 @@ if (DB_FILE) {
     accessSync(dir, constants.W_OK);
   } catch (err) {
     console.error(
-      `DB_FILE is set to ${DB_FILE} but ${dir} is not writable (${err.code}).\n` +
-      `On Railway or Fly this usually means the volume isn't mounted there yet.\n` +
-      `Refusing to start rather than writing a database that will be thrown away.`
+      `DB_FILE is set to ${DB_FILE} but ${dir} is not writable (${err.code}),\n` +
+      `running as uid ${typeof process.getuid === "function" ? process.getuid() : "?"}.\n\n` +
+      (dbMounted === true
+        ? "That directory IS a mounted volume, so the volume is fine — this container\n" +
+          "just isn't allowed to write to it. Railway mounts volumes as root and this\n" +
+          "image runs as the `node` user, which is exactly this error.\n\n" +
+          "  Fix: set RAILWAY_RUN_UID=0 in the service variables.\n\n" +
+          "(That runs the app as root inside its own container. It is Railway's\n" +
+          " documented answer, and there is no way to chown a volume you cannot write to.)"
+        : "That directory is not a mounted volume, so the path is probably wrong.\n" +
+          "Check the volume's mount path matches the directory in DB_FILE.") +
+      "\n\nRefusing to start rather than writing a database that will be thrown away."
     );
     process.exit(1);
   }
@@ -983,6 +1071,61 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`  public url: ${PUBLIC_URL}`);
   console.log(`  interactions endpoint: ${PUBLIC_URL}/interactions`);
   console.log(`  database: ${DB_FILE ?? "(default, beside the source)"}`);
+
+  if (DB_FILE) {
+    const dir = dirname(DB_FILE);
+    console.log(`  volume: ${dir} ${
+      dbMounted === true  ? "is a mounted volume"
+    : dbMounted === false ? "is NOT a mount — it is part of the container image"
+    :                       "could not be checked"}`);
+
+    /*
+     * The whole failure, named on the first boot rather than the second.
+     *
+     * DB_FILE pointing at a real path with the right name is not the same as
+     * a volume being attached to it, and every other signal — writable, boots
+     * cleanly, game works — looks identical either way.
+     */
+    if (dbMounted === false && PRODUCTION) {
+      console.warn("");
+      console.warn(`  WARNING: DB_FILE is ${DB_FILE}, but ${dir} is not a mounted volume.`);
+      console.warn("           The database is being written into the container image, so");
+      console.warn("           every deploy starts from an empty one and all drawings are lost.");
+      console.warn("           Setting DB_FILE is only half of it — the volume has to be");
+      console.warn(`           attached to this service with its mount path set to exactly ${dir}.`);
+      console.warn("");
+    }
+  }
+
+  /*
+   * Whether this is the same database as last time.
+   *
+   * Comparing the contents line across two deploys works but asks somebody to
+   * remember yesterday's numbers. This answers it in one line: a database that
+   * has survived says how old it is and how many boots it has seen, and one
+   * that is being recreated every deploy can only ever say "boot 1".
+   */
+  store.recordBoot().then(b => {
+    const days  = Math.floor(b.ageMs / 86_400_000);
+    const hours = Math.floor(b.ageMs / 3_600_000);
+    const age = days ? `${days} day${days === 1 ? "" : "s"} old`
+              : hours ? `${hours} hour${hours === 1 ? "" : "s"} old`
+              : "created just now";
+
+    console.log(`  this database: ${age}, boot ${b.boots}`);
+
+    /*
+     * Right on a genuine first deploy and wrong on nothing else. If the volume
+     * is not mounted, this is the line that says so — every single time, from
+     * the first deploy, instead of after someone loses a drawing.
+     */
+    if (b.boots === 1 && PRODUCTION) {
+      console.warn("  WARNING: this database was created seconds ago.");
+      console.warn("           If you have deployed this app before, the volume is not");
+      console.warn("           persisting and every drawing is thrown away on each deploy.");
+      console.warn(`           Check that a volume is mounted at ${dirname(DB_FILE ?? ".")}.`);
+    }
+  }).catch(err => console.error("  could not stamp the database:", err.message));
 
   /*
    * Print what survived the restart. If these numbers reset to zero after a

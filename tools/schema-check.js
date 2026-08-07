@@ -44,8 +44,8 @@ const tables = db.prepare(
 ).all().map(r => r.name);
 
 const expected = [
-  "activity_intents", "draw_sessions", "flags", "guesses", "moderation_log",
-  "rounds", "scores", "view_grants", "viewer_sessions"
+  "activity_intents", "draw_sessions", "flags", "guesses", "install",
+  "moderation_log", "rounds", "scores", "view_grants", "viewer_sessions"
 ];
 JSON.stringify(tables) === JSON.stringify(expected)
   ? ok(`all ${tables.length} tables created: ${tables.join(", ")}`)
@@ -313,6 +313,41 @@ try {
   insertScore.run("g1", "sarah", 999, 0, 0, now);
   bad("a user has two score rows in one guild");
 } catch { ok("one score row per user per guild"); }
+
+// ---------------------------------------------------------------- install
+
+/*
+ * The row that answers "is this the same database as last time". It is only
+ * useful if there is exactly one of it — two rows and the boot count means
+ * nothing, which is worse than not having one at all.
+ */
+const stampBoot = db.prepare(`
+  INSERT INTO install (id, install_id, created_at, boots, last_boot_at)
+  VALUES (1, ?, ?, 1, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    boots = install.boots + 1,
+    last_boot_at = excluded.last_boot_at
+`);
+
+stampBoot.run("install-a", now, now);
+stampBoot.run("install-b", now + 1000, now + 1000);
+stampBoot.run("install-c", now + 2000, now + 2000);
+
+const install = db.prepare("SELECT * FROM install").all();
+
+install.length === 1 && install[0].boots === 3
+  ? ok("repeated boots increment one install row rather than adding new ones")
+  : bad("install row is not a singleton: " + JSON.stringify(install));
+
+install[0].created_at === now && install[0].install_id === "install-a"
+  ? ok("and the creation stamp is the first boot, not the most recent one")
+  : bad("install creation time was overwritten: " + JSON.stringify(install[0]));
+
+try {
+  db.prepare("INSERT INTO install (id, install_id, created_at, boots, last_boot_at) VALUES (2,?,?,1,?)")
+    .run("second", now, now);
+  bad("a second install row was accepted");
+} catch { ok("a second install row is refused by the schema, not by convention"); }
 
 console.log(failures ? `\n${failures} check(s) failed` : "\nSchema verified against a live database");
 process.exit(failures ? 1 : 0);

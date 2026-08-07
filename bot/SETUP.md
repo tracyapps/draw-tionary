@@ -417,23 +417,86 @@ If `DB_FILE` points somewhere the volume isn't mounted, SQLite cheerfully
 creates the file on the container's own disk. Everything looks healthy until
 the next deploy wipes it.
 
-`bot/server.js` checks the directory is writable at startup and refuses to
-boot if it isn't, so a genuinely unmounted volume fails the deploy loudly. But
-it cannot tell a mounted `/data` from an unmounted one that happens to be
-writable — both look identical while the server runs.
+The symptom in Discord is a button on an older drawing replying "That drawing
+is no longer around" — which reads like the round was deleted rather than like
+the database was.
 
-So the startup log prints what survived:
+**Setting `DB_FILE` is only half of it.** The variable says where to write; it
+cannot attach a volume. And because the Dockerfile creates `/data` so the very
+first boot has somewhere to go, the directory exists and accepts writes
+whether or not a volume was ever attached. Permissions cannot tell the two
+apart — which is exactly how a database ends up inside a container layer.
+
+Three things guard against it, in order of how early they catch it:
+
+**1. No `DB_FILE` in production is a refusal.** Unset means the database is
+written beside the source, which in a container is inside the image and gone
+on the next deploy. There is no safe default, so the server stops and says so
+rather than guessing.
+
+**2. An unwritable `DB_FILE` directory is a refusal.** A volume mounted with
+the wrong ownership fails the deploy loudly.
+
+**3. The boot log answers the rest directly.** `/proc/mounts` knows whether
+`/data` is a real mount, so the server just asks:
 
 ```
   database: /data/draw-tionary.db
+  volume: /data is a mounted volume
+  this database: 24 days old, boot 37
   contents: 4 posted drawings, 11 guesses, 3 players
 ```
 
-**Compare that line across two consecutive deploys.** If the numbers reset to
-zero, the volume is not persisting and every drawing is being thrown away on
-each deploy. The symptom in Discord is a button on an older drawing replying
-"That drawing is no longer around" — which reads like the round was deleted
-rather than like the database was.
+If the volume line says **is NOT a mount — it is part of the container image**,
+that is the whole bug, printed on the first boot. And a database being
+recreated every deploy can only ever say **boot 1**, so either line catches it
+without having to remember yesterday's numbers.
+
+### Attaching the volume on Railway
+
+**Volumes are not in service settings.** They are not in project settings or
+workspace settings either. You create one from the **project canvas** — the
+board with the service tiles on it:
+
+- press `⌘K` and choose **Volume**, or
+- right-click the empty canvas → **Volume**
+
+Railway then asks which service to attach it to, and *then* asks for the mount
+path. Set it to exactly `/data`.
+
+Three things have to be true, all on the same service:
+
+1. A volume exists and is attached to **this** service
+2. Its mount path is exactly `/data` — not `/app/data`, not `/data/`
+3. `DB_FILE` = `/data/draw-tionary.db`
+
+**And one more, or the deploy will fail:**
+
+```
+RAILWAY_RUN_UID=0
+```
+
+Railway mounts volumes as `root`. This image deliberately runs as the `node`
+user, so a freshly attached volume is a directory the app cannot write to —
+and the server will refuse to boot rather than carry on. `RAILWAY_RUN_UID=0`
+is Railway's documented answer, and there isn't another one: you cannot chown
+a directory you have no write access to.
+
+It does mean running as root inside the container, which is a real trade
+against the `USER node` line in the Dockerfile. It is a single-tenant
+container running one Node process with no shell exposed, so the exposure is
+small — but it is not nothing, and it is worth knowing you made the choice.
+
+The boot log distinguishes the two failures, so you will not have to guess
+which one you are looking at.
+
+### Two Railway caveats worth knowing
+
+- **A service with a volume cannot use replicas.** `railway.json` already pins
+  `numReplicas: 1`, so nothing to do — but don't raise it later.
+- **Deploys with a volume attached have a moment of downtime**, healthcheck or
+  not. Railway will not run two deployments against one volume, so the old one
+  stops before the new one starts. Seconds, and it protects the database.
 
 ### Later, when you outgrow this
 
